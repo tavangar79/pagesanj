@@ -483,4 +483,6 @@ Login works exactly like trust-me's admin login: **username + password + a 6-dig
 - A 90-day retention period for DM logs.
 - Shop profiles (image and contact details) are fetched on create and on demand, not daily.
 - Profile images are stored in MongoDB (`shopImages`), up to 2 MB each.
+- Shop and category slugs are made once (shop: from the handle; category: from the English name, else the Persian name, Persian letters kept) and never change on a rename, so website URLs stay stable.
+- A shop website given as `http://` or without a scheme is stored as `https://`. Renaming a shop's handle moves the old handle to `previousHandles` automatically; one handle can't belong to two shops.
 - Logging with pino (structured JSON, built-in redaction) rather than winston.
