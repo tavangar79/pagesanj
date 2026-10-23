@@ -320,7 +320,7 @@ A category in use by any shop can't be deleted; the admin must move those shops 
 
 | Field | Type | Description |
 |---|---|---|
-| `type` | enum: `daily_check \| backfill \| post_owner_lookup \| token_refresh` | Which job ran. |
+| `type` | enum: `daily_check \| backfill \| post_owner_lookup \| profile_fetch \| token_refresh` | Which job ran. `profile_fetch` is the shop profile run (§5.6). |
 | `startedAt` | date | Start time. |
 | `finishedAt?` | date | End time; empty while running or if it crashed. |
 | `apifyRunId?` | string | Apify's run ID, to open the run in Apify's console. |
