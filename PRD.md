@@ -467,7 +467,7 @@ Login works exactly like trust-me's admin login: **username + password + a 6-dig
 1. **Tags:** are they just the status label plus free-form admin tags (current assumption), or a fixed list?
 2. **Seed data:** start with an empty shops collection, or import the shops already in trust-me?
 3. **Reviewer posts tagging several businesses:** one pending review per business (current assumption). Confirm.
-4. **Profile fetch cost:** the Apify profile scraper's price per profile isn't verified yet. Check it on the owner's account and add it to the budget in §6.2.
+4. **Profile fetch cost:** Apify's actor page lists `apify~instagram-profile-scraper` at $2.60 per 1,000 profiles on the free plan (about $0.0026 each, plus the run start cost), so a profile fetch costs well under a cent. Not yet verified on the owner's account; check it with `npm run spike:apify-profile` and add it to the budget in §6.2.
 5. **Categories:** one level, or a parent/child tree (e.g. «پوشاک» › «کفش»)? Current assumption: one level.
 
 ## 16. Decisions made by the builder or assistant (please check)
@@ -482,6 +482,7 @@ Login works exactly like trust-me's admin login: **username + password + a 6-dig
 - Persian replies by default.
 - A 90-day retention period for DM logs.
 - Shop profiles (image and contact details) are fetched on create and on demand, not daily.
+- The profile fetch runs in the worker (`apify-profile` queue); the admin API answers with a job id and the admin app polls for the result, instead of holding the request open while Apify runs. Profile fetches, like daily checks, are allowed until Apify's hard limit, not stopped at `APIFY_BUDGET_STOP_USD`.
 - Profile images are stored in MongoDB (`shopImages`), up to 2 MB each.
 - Shop and category slugs are made once (shop: from the handle; category: from the English name, else the Persian name, Persian letters kept) and never change on a rename, so website URLs stay stable.
 - A shop website given as `http://` or without a scheme is stored as `https://`. Renaming a shop's handle moves the old handle to `previousHandles` automatically; one handle can't belong to two shops.
