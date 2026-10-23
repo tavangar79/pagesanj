@@ -10,6 +10,8 @@ import { NotFound } from './pages/NotFound';
 
 // Server data passed in by Express, e.g. a deletion code's status.
 export type PageData = {
+  // CONTACT_EMAIL, shown on the legal pages (PRD §7.3).
+  contactEmail?: string;
   deletionStatus?: 'pending' | 'done' | null;
 };
 

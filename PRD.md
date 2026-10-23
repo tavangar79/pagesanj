@@ -469,6 +469,8 @@ Login works exactly like trust-me's admin login: **username + password + a 6-dig
 3. **Reviewer posts tagging several businesses:** one pending review per business (current assumption). Confirm.
 4. **Profile fetch cost:** Apify's actor page lists `apify~instagram-profile-scraper` at $2.60 per 1,000 profiles on the free plan (about $0.0026 each, plus the run start cost), so a profile fetch costs well under a cent. Not yet verified on the owner's account; check it with `npm run spike:apify-profile` and add it to the budget in §6.2.
 5. **Categories:** one level, or a parent/child tree (e.g. «پوشاک» › «کفش»)? Current assumption: one level.
+6. **Deletion callback ID:** with Instagram Login, is the `user_id` in Meta's `signed_request` the same ID the messaging webhooks send as the sender (IGSID)? The callback deletes `dmEvents` by that ID. Check with a tester account during the webhook spike.
+7. **Deletion and the queue:** finished DM jobs stay in Redis for up to 7 days (BullMQ `removeOnComplete`) and hold the message. A deletion request doesn't remove them yet. Shorten that retention for the DM queues, or remove a user's jobs on deletion, before App Review.
 
 ## 16. Decisions made by the builder or assistant (please check)
 
@@ -487,3 +489,11 @@ Login works exactly like trust-me's admin login: **username + password + a 6-dig
 - Shop and category slugs are made once (shop: from the handle; category: from the English name, else the Persian name, Persian letters kept) and never change on a rename, so website URLs stay stable.
 - A shop website given as `http://` or without a scheme is stored as `https://`. Renaming a shop's handle moves the old handle to `previousHandles` automatically; one handle can't belong to two shops.
 - Logging with pino (structured JSON, built-in redaction) rather than winston.
+- DM idempotency: BullMQ job ids come from the message `mid` (`<mid>`, `<mid>-r<n>` per reply part, `<mid>-checking`, `<mid>-lookup`, `<mid>-owner`), and a `dmEvents` row that already has a result is not answered again.
+- Per-sender limit: at most 10 sent messages a minute per recipient; over that, the reply is dropped and logged (`dmEvents.error = rate_limited`). Global send limit: 10 a second.
+- `handleMessage` adds unknown pages to the wishlist through an injected function, so another transport (e.g. ManyChat, §10.8) gets the same behaviour.
+- A review attached to a wishlist entry can't be approved until the entry is promoted to, or linked with, a shop. Linking moves the reviews; one the shop already has for the same post is rejected as a duplicate.
+- Reviewer posts with no tagged business are counted and logged in `jobRuns`, not stored.
+- A reviewer source's handle can't be edited after it's added, because posts are matched to sources by handle.
+- Security headers on every response (nosniff, frame denial, referrer policy, HSTS in production), and a strict same-origin Content-Security-Policy on the website and admin app. Nothing blocks crawlers. Secret query values (`hub.verify_token`, tokens, `signed_request`) are masked in request logs.
+- The website gets `contactEmail` (from `CONTACT_EMAIL`) with every page's server data, for the legal pages.

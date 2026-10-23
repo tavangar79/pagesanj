@@ -237,7 +237,7 @@
       "label": "App()",
       "file_type": "code",
       "source_file": "web/src/App.tsx",
-      "source_location": "L16",
+      "source_location": "L18",
       "_origin": "ast",
       "id": "src_app_app",
       "community": 6,
@@ -989,7 +989,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "web/src/App.tsx",
-      "source_location": "L16",
+      "source_location": "L18",
       "weight": 1.0,
       "source": "src_app",
       "target": "src_app_app",
@@ -1253,7 +1253,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "web/src/App.tsx",
-      "source_location": "L17",
+      "source_location": "L19",
       "weight": 1.0,
       "source": "src_app_app",
       "target": "src_routes_matchroute"
@@ -2157,5 +2157,6 @@
       "confidence_score": 1.0
     }
   ],
-  "hyperedges": []
+  "hyperedges": [],
+  "built_at_commit": "c5252e5e56a145d6c120eda2a6907669cc28176a"
 }
