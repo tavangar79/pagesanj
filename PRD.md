@@ -479,7 +479,7 @@ Login works exactly like trust-me's admin login: **username + password + a 6-dig
 - Unknown tagged businesses from reviewer posts go to the wishlist (with the pending review attached) instead of creating a shop.
 - Backfill cap of 50 posts per new source; daily check at 09:00 Tehran time; budget stop at $4.50.
 - Post-to-author lookup via Apify, with a permanent cache.
-- Persian replies by default.
+- Persian replies by default. English when the message's own words (ignoring URLs and @handles) have at least 3 Latin letters and more Latin than Persian/Arabic letters.
 - A 90-day retention period for DM logs.
 - Shop profiles (image and contact details) are fetched on create and on demand, not daily.
 - The profile fetch runs in the worker (`apify-profile` queue); the admin API answers with a job id and the admin app polls for the result, instead of holding the request open while Apify runs. Profile fetches, like daily checks, are allowed until Apify's hard limit, not stopped at `APIFY_BUDGET_STOP_USD`.
