@@ -8,4 +8,5 @@ backend/tests/fixtures/webhooks/*.local.json
 # graphify: keep the report and graph, skip caches
 **/graphify-out/cache/
 **/graphify-out/memory/
+**/graphify-out/20*/
 /graphify-out/
