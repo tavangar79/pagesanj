@@ -1,0 +1,27 @@
+{
+  "name": "pagesanj",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "admin",
+    "web",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w backend",
+    "dev:worker": "npm run dev:worker -w backend",
+    "dev:admin": "npm run dev -w admin",
+    "dev:web": "npm run dev -w web",
+    "build": "npm run build -w admin && npm run build -w web && npm run build -w backend",
+    "start": "npm run start -w backend",
+    "worker": "npm run worker -w backend",
+    "typecheck": "npm run typecheck -w backend",
+    "test": "npm run test -w backend",
+    "admin:import": "npm run admin:import -w backend --",
+    "admin:create": "npm run admin:create -w backend --"
+  }
+}

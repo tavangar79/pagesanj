@@ -1,0 +1,13 @@
+{
+  "0": "App.tsx",
+  "1": "compilerOptions",
+  "2": "components.json",
+  "3": "package.json",
+  "4": "devDependencies",
+  "5": "dependencies",
+  "6": "tailwind",
+  "7": "admin/",
+  "8": "api.ts",
+  "9": "utils.ts",
+  "10": "vite.config.ts"
+}
