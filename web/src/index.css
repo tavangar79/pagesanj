@@ -1,28 +1,174 @@
 @import "tailwindcss";
+/* Vazirmatn variable, self-hosted (MASTER.md; the CSP allows only same-origin fonts). */
+@import "@fontsource-variable/vazirmatn";
 
-/* Same semantic tokens as admin/src/index.css. TODO: copy the real values from
-   design-system/trust-me/MASTER.md; layout and typography via the Taste skill (PRD §7.1). */
-@theme {
-  --font-sans: "Vazirmatn", system-ui, sans-serif;
-  --color-surface: #ffffff;
-  --color-ink: #111111;
-  --color-muted: #6b7280;
-  --color-border: #e5e7eb;
-  --color-primary: #111111;
+/* Semantic tokens, values from design-system/trust-me/MASTER.md (trust-me's globals.css).
+   Components use only these names (bg-surface, text-ink-2, border-line, ...). */
+:root {
+  color-scheme: light;
+  --canvas: #f5f7fa;
+  --surface: #ffffff;
+  --subtle: #eef2f7;
+  --line: #dde4ed;
+  --line-strong: #c2ccda;
+  --ink: #0f172a;
+  --ink-2: #334155;
+  --ink-3: #5b6a80;
+
+  --brand: #0369a1;
+  --brand-solid: #0369a1;
+  --brand-solid-hover: #075985;
+  --brand-soft: #e8f3fa;
+  --brand-line: #b9dcf0;
+  --on-brand: #ffffff;
+
+  --caution: #92400e;
+  --caution-soft: #fffbeb;
+  --caution-line: #fde68a;
+  --success: #166534;
+  --success-soft: #f0fdf4;
+  --success-line: #bbf7d0;
+
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.06);
+  --shadow-raised: 0 4px 16px -4px rgb(15 23 42 / 0.1), 0 2px 4px -2px rgb(15 23 42 / 0.06);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --color-surface: #111111;
-    --color-ink: #f5f5f5;
-    --color-muted: #9ca3af;
-    --color-border: #262626;
-    --color-primary: #f5f5f5;
+    color-scheme: dark;
+    --canvas: #0b1220;
+    --surface: #111a2b;
+    --subtle: #17233a;
+    --line: #233149;
+    --line-strong: #34445f;
+    --ink: #e8eef7;
+    --ink-2: #b8c4d6;
+    --ink-3: #8b9ab0;
+
+    --brand: #7cc8f0;
+    --brand-solid: #0369a1;
+    --brand-solid-hover: #0476b4;
+    --brand-soft: #0f2a40;
+    --brand-line: #1d4c6e;
+
+    --caution: #fde68a;
+    --caution-soft: #33260a;
+    --caution-line: #78350f;
+    --success: #bbf7d0;
+    --success-soft: #0d2a1b;
+    --success-line: #14532d;
+
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3);
+    --shadow-raised: 0 8px 24px -6px rgb(0 0 0 / 0.5);
   }
 }
 
-body {
-  @apply bg-surface text-ink font-sans;
+@theme inline {
+  --font-sans: "Vazirmatn Variable", Tahoma, sans-serif;
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-subtle: var(--subtle);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-brand: var(--brand);
+  --color-brand-solid: var(--brand-solid);
+  --color-brand-solid-hover: var(--brand-solid-hover);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-line: var(--brand-line);
+  --color-on-brand: var(--on-brand);
+  --color-caution: var(--caution);
+  --color-caution-soft: var(--caution-soft);
+  --color-caution-line: var(--caution-line);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-success-line: var(--success-line);
+  --shadow-card: var(--shadow-card);
+  --shadow-raised: var(--shadow-raised);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-canvas text-ink font-sans antialiased;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand;
+  }
+}
+
+/* Recipes from MASTER.md, named once here so pages don't repeat the class strings. */
+@layer components {
+  .container-page {
+    @apply mx-auto w-full max-w-5xl px-4;
+  }
+  .link {
+    @apply font-medium text-brand underline underline-offset-4 decoration-brand-line hover:decoration-brand;
+  }
+  .nav-link {
+    @apply rounded-lg px-3 py-2 text-sm font-medium text-ink-2 transition-colors hover:bg-subtle hover:text-ink aria-[current=page]:text-brand;
+  }
+  .footer-link {
+    @apply py-1 text-sm text-ink-2 transition-colors hover:text-brand aria-[current=page]:font-semibold aria-[current=page]:text-brand;
+  }
+  .btn-primary {
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-solid px-5 text-sm font-semibold text-on-brand transition-colors hover:bg-brand-solid-hover active:translate-y-px;
+  }
+  .btn-small {
+    @apply inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 text-sm font-medium text-ink-2 transition-colors hover:bg-subtle;
+  }
+  .input {
+    @apply min-h-11 w-full rounded-xl border border-line-strong bg-surface px-3 py-2 text-sm text-ink transition-colors placeholder:text-ink-3 focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15;
+  }
+  .eyebrow {
+    @apply text-xs font-semibold tracking-wide text-brand;
+  }
+  .callout {
+    @apply rounded-xl border border-brand-line bg-brand-soft px-4 py-3 leading-8 text-ink;
+  }
+  .hero-title {
+    font-size: clamp(1.875rem, 1.2rem + 3vw, 3rem);
+    line-height: 1.35;
+    text-wrap: balance;
+  }
+  .bubble-in {
+    @apply max-w-[90%] rounded-2xl rounded-ss-md bg-subtle px-4 py-3 text-sm leading-7 text-ink-2;
+  }
+  .bubble-out {
+    @apply max-w-[80%] rounded-2xl rounded-se-md bg-brand-solid px-4 py-2.5 text-sm font-medium text-on-brand;
+  }
+  /* "How it works": numbered steps joined by a hairline on the start side. */
+  .step {
+    @apply relative flex gap-4;
+  }
+  .step:not(:last-child)::before {
+    content: "";
+    @apply absolute top-10 bottom-0 start-[1.1875rem] w-px bg-line;
+  }
+  .step-number {
+    @apply flex size-10 shrink-0 items-center justify-center rounded-full border border-brand-line bg-brand-soft font-bold text-brand;
+  }
+  .pill-success,
+  .pill-caution,
+  .pill-neutral {
+    @apply inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold;
+  }
+  .pill-success {
+    @apply border-success-line bg-success-soft text-success;
+  }
+  .pill-caution {
+    @apply border-caution-line bg-caution-soft text-caution;
+  }
+  .pill-neutral {
+    @apply border-line bg-subtle text-ink-2;
+  }
+  .skip-link {
+    @apply sr-only focus:not-sr-only focus:absolute focus:start-4 focus:top-4 focus:z-10 focus:rounded-lg focus:bg-surface focus:px-4 focus:py-2 focus:text-ink focus:shadow-raised;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -31,5 +177,12 @@ body {
   *::after {
     animation: none !important;
     transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
   }
 }

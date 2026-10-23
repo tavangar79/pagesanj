@@ -497,3 +497,5 @@ Login works exactly like trust-me's admin login: **username + password + a 6-dig
 - A reviewer source's handle can't be edited after it's added, because posts are matched to sources by handle.
 - Security headers on every response (nosniff, frame denial, referrer policy, HSTS in production), and a strict same-origin Content-Security-Policy on the website and admin app. Nothing blocks crawlers. Secret query values (`hub.verify_token`, tokens, `signed_request`) are masked in request logs.
 - The website gets `contactEmail` (from `CONTACT_EMAIL`) with every page's server data, for the legal pages.
+- The website also gets `instagramHandle` (`SITE_INSTAGRAM_HANDLE`, default `trustme`) and `companyName` (`COMPANY_NAME`, default the brand name) when set. The site brand is trust-me's: «اعتماد» in Persian, "Trust Me" in English.
+- Website legal copy commits to: DM requests and email deletion requests completed within 30 days; deletion via Instagram's *Apps and websites* runs as soon as the callback arrives; processing-queue messages removed within 7 days (§15 item 7). The site sets no cookies and loads no analytics.

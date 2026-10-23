@@ -5,6 +5,5 @@
   "3": "compilerOptions",
   "4": "web/",
   "5": "scripts",
-  "6": "entry-server.tsx",
   "7": "vite.config.ts"
 }
