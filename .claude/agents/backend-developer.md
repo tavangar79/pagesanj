@@ -1,6 +1,6 @@
 ---
 name: backend-developer
-description: Builds and reviews the pagesanj backend (backend/) - Express routes, Mongoose models, BullMQ queues and workers, the DM bot, Apify and Meta Graph API integrations, admin auth and the admin JSON API.
+description: Builds and reviews the pagesanj backend (backend/) - Express routes, Mongoose models, BullMQ queues and workers, the DM bot, the BoxAPI integration (DM webhook and send, Instagram Data API, AI API), admin auth and the admin JSON API.
 skills:
   - backend-module
 ---

@@ -12,7 +12,7 @@
 A standalone backend service, built with Node.js, Express and MongoDB, that does three things:
 
 1. **DM lookup bot.** Someone DMs pagesanj's Instagram account a shop's profile or post. The bot replies with what we know about that shop: its review posts, its tags and a link. If we know nothing, the shop goes on a review wishlist.
-2. **Daily reviewer-page check.** Once a day, Apify pulls new posts from reviewer pages we follow (e.g. `@sadegh.delicious`). Each new post becomes a **pending review** on the shop the post tags.
+2. **Daily reviewer-page check.** Once a day, BoxAPI's Instagram Data API pulls new posts from reviewer pages we follow (e.g. `@sadegh.delicious`). Each new post becomes a **pending review** on the shop the post tags.
 3. **Bilingual landing page (EN/FA).** A public site with the pages Meta needs to approve the app (privacy policy, terms, data deletion).
 
 Admins approve the pending reviews and work through the wishlist in a small, password-protected admin panel served by the same app.
@@ -31,8 +31,7 @@ The full public website (shop pages, search) is **out of scope**. It comes a few
 - Reply automatically to a DM about a profile or post, in seconds.
 - Never lose a request for a page we don't know. Every one of them ends up on the wishlist, with a count of how many times it was asked for.
 - Turn every new post from followed reviewer pages into a pending review without anyone typing it in.
-- Get the Meta app approved, starting in development mode.
-- Stay inside Apify's **free plan ($5/month)** at launch.
+- Reach Instagram only through **BoxAPI** (boxapi.ir, §10): its official DM & Comment API for DMs, its Instagram Data API for public posts and profiles.
 
 **Non-goals (v1)**
 - The public website, search, and shop pages.
@@ -43,7 +42,7 @@ The full public website (shop pages, search) is **out of scope**. It comes a few
 
 **Anti-goals (a failure even if it technically works)**
 - Publishing anything without an admin's approval.
-- Logging into Instagram with a username and password, or using any unofficial or private Instagram API, which risks a ban on pagesanj's account.
+- Logging into Instagram with pagesanj's username and password, or calling Instagram from pagesanj's account any way other than BoxAPI's official DM API, which risks a ban on pagesanj's account. (BoxAPI's Data API reads public data without touching our account, so it's allowed.)
 - Replying with a wrong shop, for example the shop tagged in a post instead of the post's author (see §5.2).
 - Leaking secrets such as tokens, or storing more personal data about the people who DM us than the bot needs.
 
@@ -60,10 +59,10 @@ The full public website (shop pages, search) is **out of scope**. It comes a few
 ### 5.1 Flow
 
 1. A user sends pagesanj's Instagram Business account a DM.
-2. Meta sends a webhook to `POST /webhooks/instagram`. We check the `X-Hub-Signature-256` HMAC (using the app secret), add one job per message to the **BullMQ** queue `dm-inbound` with `jobId = mid` (so Meta's retries don't create duplicate jobs), and return `200` right away. A worker processes steps 3–8.
-   - **Retries:** 3 attempts with exponential backoff for temporary failures (Graph API 5xx, Apify timeouts). After the last attempt, the job stays in the failed set and is logged in `dmEvents.error`.
-   - **Slow step on its own queue:** the post-owner lookup (§5.3) runs on a separate `post-owner` queue with low concurrency (e.g. 2), so a slow Apify call doesn't hold up profile lookups. When it finishes, it re-enqueues the DM job to finish the reply.
-   - **Sending:** replies go out through an `dm-send` queue with a BullMQ rate limiter, keeping us under Meta's send limits.
+2. BoxAPI forwards the DM to `POST /webhooks/boxapi`. We check the `X-BoxApi-Signature` HMAC over `{X-BoxApi-Timestamp}.{raw body}` (using `BoxApiWebhookSecret`, timestamp within 300 s), add one job per message to the **BullMQ** queue `dm-inbound` with `jobId = mid` (so BoxAPI's retries, 3 × 60 s, don't create duplicate jobs), and return `200` right away. A worker processes steps 3–8.
+   - **Retries:** 3 attempts with exponential backoff for temporary failures (BoxAPI 5xx or timeouts). After the last attempt, the job stays in the failed set and is logged in `dmEvents.error`.
+   - **Slow step on its own queue:** the post-owner lookup (§5.3) runs on a separate `post-owner` queue with low concurrency (e.g. 2), so a slow lookup doesn't hold up profile lookups. When it finishes, it re-enqueues the DM job to finish the reply.
+   - **Sending:** replies go out through BoxAPI's `send_message` via a `dm-send` queue with a BullMQ rate limiter.
 3. We extract a **target** from the message (§5.2).
 4. We resolve the target to an **Instagram handle** (§5.3).
 5. We look the handle up in `shops`, checking both `handle` and `previousHandles`.
@@ -80,10 +79,10 @@ The full public website (shop pages, search) is **out of scope**. It comes a few
 ### 5.3 Extracting and resolving the target
 
 - **Text messages:** parse Instagram URLs and `@handle` patterns. Normalise handles: lowercase, strip `@`, the trailing `/` and query strings such as `?igsh=`.
-- **Attachments:** Meta delivers shares as message `attachments`; seen types include `share`, `ig_reel` and `ig_post`, each with a `payload.url` or similar. **Build step zero (spike):** in development mode, send the test account a shared profile, post, reel and plain link, log the raw webhook bodies, and lock the parser down from real samples. Do not guess the payload shape.
+- **Attachments:** BoxAPI passes Meta's message `attachments` through; seen types include `share`, `ig_reel` and `ig_post`, each with a `payload.url` or similar (BoxAPI documents `ig_reel` only). **Build step zero (spike):** once the page is connected to BoxAPI, send it a shared profile, post, reel and plain link, log the raw webhook bodies, and lock the parser down from real samples. Do not guess the payload shape.
 - **Post to author:** a post URL only gives us the shortcode, so we look up its owner.
-  - **Default:** Apify `apify~instagram-post-scraper` with the post URL, reading `ownerUsername`. This takes roughly 10–20 seconds and costs about $0.002–0.005.
-  - Cache `shortcode → ownerUsername` in `postOwners` forever, so the same post never costs twice.
+  - **Default:** BoxAPI Data API `media/get_info_by_shortcode`, reading `items[0].user.username`.
+  - Cache `shortcode → ownerUsername` in `postOwners` forever, so the same post is never looked up twice.
   - Also check our own `reviews` first: if the shortcode is a post we already stored, we know the owner for free.
   - While the lookup runs, the bot may send a short "checking…" message.
 - If the target can't be resolved, for example a private account or a deleted post, reply with "couldn't read this, please share the profile instead."
@@ -117,41 +116,32 @@ The full public website (shop pages, search) is **out of scope**. It comes a few
 
 Every shop has a profile image, and has the contact details its own Instagram page shows.
 
-- **When:** when a shop is created (by an admin, or by promoting a wishlist entry), and when an admin presses **refresh profile**. Not on every DM and not daily, to keep Apify costs down.
-- **How:** one Apify profile run for the shop's handle (*builder's call:* `apify~instagram-profile-scraper` or similar). **Verify the output field names against a real run before building**, as in §6.2. The fields we expect to use are the profile picture (HD if available), the external (bio) link, and the public business email and phone.
+- **When:** when a shop is created (by an admin, or by promoting a wishlist entry), and when an admin presses **refresh profile**. Not on every DM and not daily.
+- **How:** one BoxAPI Data API `user/get_info_by_username` call for the shop's handle. **Verify the field names against a real response before building**, as in §6.2. The fields we expect to use are `profile_pic_url_hd`, `external_url` / `bio_links`, `business_email` and `business_phone_number`.
 - **Image:** download it straight away (the Instagram link expires), check that it's a real JPEG, PNG or WebP of at most 2 MB, and store it in `shopImages`. If the fetch fails, the admin must upload an image before the shop can be saved.
 - **Contact details:** copy only what the page itself publishes. Normalise the email (lowercase), the website (full `https://` URL) and the phone (international form). The admin can correct or clear a field, and can add one the page shows but the scrape missed (e.g. a number written in the bio). Nothing is taken from other sources, such as reviewer posts or DMs.
 - **Refresh:** a refresh replaces the image (if it changed) and the contact fields, and sets `profileFetchedAt`. A field the page no longer shows is cleared.
 - **Not the same as pagesanj's sensitive identifiers.** pagesanj keeps phone numbers it collects as evidence encrypted and never public. The `contact.phone` here is different: it's the number the shop itself advertises on its page, so it's public by nature. Never copy a phone number into `contact` from anywhere but the shop's own page.
 
-## 6. Feature 2: Daily reviewer-page check (Apify)
+## 6. Feature 2: Daily reviewer-page check (BoxAPI Data API)
 
 ### 6.1 Flow
 
 1. An admin adds a **reviewer source** (`handle`, `name`, `follow: true`).
 2. **First run for a new source (backfill):** fetch up to `backfillLimit` recent posts (default **50**, set per source), then mark `backfillDone`.
-3. **Daily:** a BullMQ scheduled job on the `apify-daily` queue, by default **09:00 Asia/Tehran**, starts **one combined Apify run** for all followed sources, asking only for recent posts. Use the actor's "only newer than" input if it supports one; otherwise use a small `resultsLimit` per source, e.g. 10. Either way, **deduplicate by shortcode** on our side.
+3. **Daily:** a BullMQ scheduled job on the `apify-daily` queue, by default **09:00 Asia/Tehran**, fetches the newest page (12 posts) of each followed source, paging with `max_id` only while every post on the page is new. There's no "only newer than" filter, so **deduplicate by shortcode** on our side.
 4. For each post we haven't stored yet:
    - Find the **tagged businesses**: the union of caption `mentions` and `taggedUsers`, minus the reviewer's own handle, minus a configurable ignore list (e.g. sponsors that aren't shops).
    - **No tagged business:** store it as `skipped` (for audit), and don't create a review.
    - **One or more:** create **one pending review per tagged business** (§6.3).
 5. Update the source's `lastSeenShortcode` and `lastSeenPostAt`. **Ignore pinned posts (`isPinned`) when computing "newest"**, because pinned posts appear first regardless of date.
-6. Save a `jobRuns` record: Apify run ID, cost in USD, posts fetched, reviews created, errors.
+6. Save a `jobRuns` record: posts fetched, reviews created, errors.
 
-### 6.2 Apify details (verified 2026-10-22 against the owner's account)
+### 6.2 BoxAPI Data API details
 
-- **Actor:** `apify~instagram-post-scraper`. Input: `{"username": ["sadegh.delicious", ...], "resultsLimit": N}`.
-- **Output fields used:** `shortCode`, `url`, `type`, `timestamp`, `caption`, `mentions`, `taggedUsers`, `hashtags`, `ownerUsername`, `ownerFullName`, `displayUrl`, `videoUrl`, `likesCount`, `commentsCount`, `isPinned`, `paidPartnership`. Also store the **full raw item**.
-- **Pricing (free tier):** $0.0017 per post, plus a small start cost per run. A test run of 3 posts cost $0.0081.
-- **Free plan:** $5 a month, 5 jobs at once, and **results deleted after 7 days**. We must store everything ourselves right away.
-- **Budget:**
-  - Daily checks in one combined run cost about $0.10 a month in start costs, plus about $0.0017 per new post.
-  - A page posting daily costs about $0.05–0.10 a month.
-  - That leaves room for roughly **20–40 followed pages**.
-  - Backfills are the expensive part, which is why there's a cap.
-- **Budget guard:** before each run, read `GET /v2/users/me/limits`. If `monthlyUsageUsd` is above `APIFY_BUDGET_STOP_USD` (default $4.50), skip the backfill and log a warning. Daily checks continue until the hard limit.
-- **Running a job:** start the run with `POST /v2/acts/{actor}/runs`, poll the run status, then read the dataset. Don't depend on `run-sync`, which times out after 300 seconds.
-- The token goes in an environment variable (`APIFY_TOKEN`), never in the repo. For now, use the existing token from discovery, held by the owner.
+- **Endpoint:** `POST https://instagram.boxpi.ir/api/instagram/user/get_media_by_username` (host for servers outside Iran) with `Authorization: Bearer <BoxApiInstagramToken>` and body `{"username": "sadegh.delicious", "count": 12, "max_id"?: "<next_max_id>"}`. One call per source; at most 12 posts per call.
+- **Response:** wrapped as `{ status, response: { status_code, body } }`. **Fields used** (from `body.items[]`, to verify against a real response before building): `code` (shortcode), `taken_at`, `caption.text`, `usertags.in[].user.username` (also on carousel children), `user.username`, `image_versions2`, video URLs, `is_paid_partnership`, and a pinned flag. Also store the **full raw item**.
+- The token goes in `BoxApiInstagramToken` in `backend/.env`, never in the repo. Full endpoint notes: the `boxapi` skill (`.claude/skills/boxapi/SKILL.md`).
 
 ### 6.3 Pending review creation
 
@@ -181,7 +171,7 @@ Meta's review needs a real public presence. The landing page is its own React ap
 | `/fa/data-deletion`, `/en/data-deletion` | Deletion instructions (§7.3), plus a form to check a confirmation code's status. |
 | `/fa/data-deletion/status?code=…`, `/en/…` | The status (`pending` or `done`) for a confirmation code. This is the `url` returned to Meta's callback. |
 
-### 7.3 Meta requirements checklist (must pass before App Review, §10)
+### 7.3 Legal pages checklist (originally for Meta App Review; kept for users and BoxAPI, §10)
 
 - [ ] **Public URLs, HTTPS, status 200.** The privacy, terms and data-deletion pages load without login, cookies or JavaScript, and without redirects. Give Meta the direct `/en/...` URLs, not `/`. Don't block or challenge Meta's crawler (`facebookexternalhit`), e.g. with a bot check or a geo-block.
 - [ ] **The privacy policy names the app and the company**, and says in plain words:
@@ -397,16 +387,17 @@ Login works exactly like pagesanj's admin login: **username + password + a 6-dig
 5. **Reviewer sources:** add or edit, toggle follow, set the backfill limit, "run backfill now."
 6. **Jobs:** recent `jobRuns`, current Apify usage this month, "run daily check now."
 
-## 10. Meta setup (development mode first)
+## 10. Instagram setup (BoxAPI)
 
-1. Create a Meta app with the **Instagram API with Instagram Login** product, using pagesanj's **Instagram Business (or Creator) account** (the company is registered outside Iran).
-2. In development mode, generate the access token in the app dashboard. Permissions: `instagram_business_basic`, `instagram_business_manage_messages`.
-3. Subscribe the webhook to the `messages` field. Verification is `GET /webhooks/instagram` with `hub.mode`, `hub.verify_token` and `hub.challenge`.
-4. **Development mode limit:** the bot only receives DMs from accounts with a role on the app (admins and testers). That's enough to build and demo everything.
-5. **Going public:** complete **business verification**, pass the §7.3 checklist, then submit **App Review** for advanced access to `instagram_business_manage_messages`. Include a screen recording (DM, then webhook, then reply), the privacy policy, data-deletion and terms URLs, and a clear use-case description: "users message us first; we reply with information about the page they shared." Expect between a few days and about 4 weeks, and possibly one resubmission.
-6. **Token lifecycle:** long-lived tokens expire after 60 days. A weekly BullMQ scheduled job (`token-refresh` queue) calls `GET https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token` and stores the new token encrypted in the database. Alert if the refresh fails.
-7. **Send API:** `POST https://graph.instagram.com/<version>/me/messages` with `{ recipient: { id }, message: { text } }`. Pin the Graph API version in configuration.
-8. **Fallback:** if App Review stalls, the same lookup can sit behind ManyChat's External Request (Pro plan). Keep the lookup logic in a function that doesn't depend on the transport.
+We have **no Meta app of our own**: no App Review, no Graph API token and no token refresh. BoxAPI's official, Meta-approved DM & Comment API does that part. Endpoint details are in the `boxapi` skill.
+
+1. Connect pagesanj's **Instagram Business (or Creator) account** to BoxAPI through BoxAPI's official Instagram login link (`instagram_oauth_url` from `GET https://boxapi.ir/service/info`).
+2. In the BoxAPI panel (*API settings*): set the webhook URL to `https://<PUBLIC_BASE_URL>/webhooks/boxapi`, and generate the **webhook secret** (`BoxApiWebhookSecret`). The route rejects every request until the secret is set.
+3. **Tokens** in `backend/.env`: `BoxApiInstagramDMToken` (DM & Comment API, header `X-Api-Key`), `BoxApiInstagramToken` (Instagram Data API, Bearer), `BoxApiAIToken` (AI API, Bearer, e.g. the `typesafe/jev-*` models).
+4. **Send API:** `POST https://boxapi.ir/service/actions/send_message` with `{ account_id, recipient_id, message }`. `account_id` is the connected page's UUID, and `recipient_id` is the webhook's `sender.id`.
+5. **BoxAPI rules:** message only people who messaged or commented first. No bulk or unsolicited messages (BoxAPI closes accounts for spam).
+6. **Hosting:** the backend runs **outside Iran**, so the Data API uses `https://instagram.boxpi.ir` and the AI API uses `https://ai.boxpi.ir`.
+7. **Fallback:** keep the lookup logic in a function that doesn't depend on the transport.
 
 ## 11. Tech stack and architecture
 
@@ -449,17 +440,15 @@ Login works exactly like pagesanj's admin login: **username + password + a 6-dig
 - The bot replies in **≤5 seconds** for a profile and **≤30 seconds** for a post (which needs the owner lookup), at the 95th percentile.
 - **≥95%** of DMs containing a profile or post are resolved to a handle.
 - Every new post from followed sources appears as a pending review within 24 hours.
-- Apify spend stays **≤$5 a month**.
-- Meta app approved (advanced access) within 6 weeks of submission.
 
 ## 14. Milestones
 
-1. **M0, webhook spike (1–2 days):** Meta app in development mode, webhook verified, raw payloads logged for each share type (§5.3). Locks the parser down.
+1. **M0, webhook spike (1–2 days):** page connected to BoxAPI, `/webhooks/boxapi` receiving signed events, raw payloads logged for each share type (§5.3). Locks the parser down.
 2. **M1, core and data:** models (including categories and shop images), the admin app shell (design system from ui-ux-pro-max, Tailwind and shadcn/ui setup, sidebar), admin login with two-step verification and `admin:import` from pagesanj (§9.1), shop and category CRUD in admin, the shop profile fetch (§5.6), handle normalisation, lookup function with unit tests.
 3. **M2, DM bot:** parse, resolve (including the Apify post-owner lookup with cache), reply in fa/en, wishlist, dedupe and rate limits.
 4. **M3, Apify daily check:** reviewer sources, backfill, daily cron, pending reviews, budget guard, job runs, admin approval screens.
 5. **M4, landing page and Meta compliance:** EN/FA pages designed with the Taste skill, every item of the §7.3 checklist, data-deletion and deauthorize callbacks, token refresh job.
-6. **M5, App Review:** business verification, screen recording, submission, fixes.
+6. **M5, BoxAPI migration:** replace the Graph API send, Meta webhook, token refresh and Apify code with BoxAPI (§10, §5.3, §5.6, §6.2); remove the Meta-only config and Apify cost tracking.
 7. **Later (not v1):** public website with shop pages (then add the shop link to DM replies), search, a one-time import of shops from pagesanj (its CSV importer columns: `handle, display_name, website, categories`). Category names in the file are matched to `categories` by normalised name; an unknown name is reported, not created on the fly. Imported shops still need the profile fetch (§5.6).
 
 ## 15. Open questions
@@ -467,7 +456,7 @@ Login works exactly like pagesanj's admin login: **username + password + a 6-dig
 1. **Tags:** are they just the status label plus free-form admin tags (current assumption), or a fixed list?
 2. **Seed data:** start with an empty shops collection, or import the shops already in pagesanj?
 3. **Reviewer posts tagging several businesses:** one pending review per business (current assumption). Confirm.
-4. **Profile fetch cost:** Apify's actor page lists `apify~instagram-profile-scraper` at $2.60 per 1,000 profiles on the free plan (about $0.0026 each, plus the run start cost), so a profile fetch costs well under a cent. Not yet verified on the owner's account; check it with `npm run spike:apify-profile` and add it to the budget in §6.2.
+4. **Shared post and profile payloads:** BoxAPI only documents the `ig_reel` share. Log real ones in M0.
 5. **Categories:** one level, or a parent/child tree (e.g. «پوشاک» › «کفش»)? Current assumption: one level.
 6. **Deletion callback ID:** with Instagram Login, is the `user_id` in Meta's `signed_request` the same ID the messaging webhooks send as the sender (IGSID)? The callback deletes `dmEvents` by that ID. Check with a tester account during the webhook spike.
 7. **Deletion and the queue:** finished DM jobs stay in Redis for up to 7 days (BullMQ `removeOnComplete`) and hold the message. A deletion request doesn't remove them yet. Shorten that retention for the DM queues, or remove a user's jobs on deletion, before App Review.
@@ -479,8 +468,9 @@ Login works exactly like pagesanj's admin login: **username + password + a 6-dig
 - The admin panel is a Vite + React app (Tailwind, shadcn/ui, designed with the ui-ux-pro-max skill), served by the same Express app with a JSON API, rather than a Next.js app.
 - Admin accounts reuse pagesanj's: same `DATA_ENCRYPTION_KEY`, same password hash and TOTP formats, copied with `admin:import`, so one authenticator entry works for both panels.
 - Unknown tagged businesses from reviewer posts go to the wishlist (with the pending review attached) instead of creating a shop.
-- Backfill cap of 50 posts per new source; daily check at 09:00 Tehran time; budget stop at $4.50.
-- Post-to-author lookup via Apify, with a permanent cache.
+- Backfill cap of 50 posts per new source; daily check at 09:00 Tehran time.
+- Post-to-author lookup via BoxAPI's Data API, with a permanent cache.
+- **2026-10-28: BoxAPI replaces Meta's Graph API and Apify.** DMs come in on `POST /webhooks/boxapi` and go out through BoxAPI's `send_message`. Reviewer posts, post owners and shop profiles come from BoxAPI's Instagram Data API. AI calls (Jev models) go to BoxAPI's AI API. Our own Meta app, App Review, token refresh and all cost and budget tracking are dropped. Until the M5 migration lands, the old Meta and Apify code (`/webhooks/instagram`, `src/meta/`, `src/apify/`, `jobRuns.costUsd`) is still in place and is removed by that work.
 - Persian replies by default. English when the message's own words (ignoring URLs and @handles) have at least 3 Latin letters and more Latin than Persian/Arabic letters.
 - A 90-day retention period for DM logs.
 - Shop profiles (image and contact details) are fetched on create and on demand, not daily.

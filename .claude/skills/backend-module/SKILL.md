@@ -1,13 +1,13 @@
 ---
 name: backend-module
-description: Use when adding or changing anything in backend/ - a Mongoose model, Express route, BullMQ queue or worker, scheduler, Apify or Meta Graph API integration, bot logic, or admin JSON endpoint in the pagesanj project.
+description: Use when adding or changing anything in backend/ - a Mongoose model, Express route, BullMQ queue or worker, scheduler, bot logic, or admin JSON endpoint in the pagesanj project. For Instagram or AI calls, also use the boxapi skill.
 ---
 
 # Backend module (pagesanj)
 
 ## Steps
 
-1. **Read the spec section** (PRD §5 bot, §6 Apify, §7.3 Meta callbacks, §8 data model, §9 admin, §10 Meta, §11 stack, §12 security). If the code must differ from the PRD, update the PRD too.
+1. **Read the spec section** (PRD §5 bot, §6 reviewer check, §7.3 legal pages, §8 data model, §9 admin, §10 BoxAPI, §11 stack, §12 security). Instagram and AI calls go through BoxAPI: follow the `boxapi` skill. If the code must differ from the PRD, update the PRD too.
 2. **Put it in the right place:**
    - Model → `backend/src/models/<Name>.ts`, fields, enums and indexes exactly as PRD §8 (handles stored normalised; `timestamps: true`).
    - Bot logic → `backend/src/bot/`, pure functions with dependencies passed in (no Express/BullMQ/Graph imports).
@@ -19,6 +19,6 @@ description: Use when adding or changing anything in backend/ - a Mongoose model
    - [ ] No secret or message text logged at info; tokens encrypted at rest (`encryptField`).
    - [ ] Webhook and `signed_request` HMACs verified with constant-time compare.
    - [ ] Idempotent: DM jobs keyed by `mid`, reviews unique per (target, shortcode).
-   - [ ] Apify calls go through the budget guard and write `jobRuns`.
+   - [ ] Background jobs that call BoxAPI write a `jobRuns` entry (no cost or budget tracking).
 4. **Test** with vitest in `backend/tests/` (fixtures from real payloads in `tests/fixtures/`). `npm run typecheck` and `npm test` pass.
 5. `graphify update backend`.

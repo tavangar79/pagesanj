@@ -1,6 +1,6 @@
 # pagesanj
 
-Instagram DM lookup bot, daily reviewer-page check (Apify) and a bilingual (fa/en) public website, with a small admin panel. The spec is `PRD.md`; read the relevant section before building a feature and keep the PRD in sync when a decision changes.
+Instagram DM lookup bot, daily reviewer-page check and a bilingual (fa/en) public website, with a small admin panel. The spec is `PRD.md`; read the relevant section before building a feature and keep the PRD in sync when a decision changes.
 
 ## Layout
 
@@ -16,7 +16,7 @@ npm workspaces, three folders:
 
 Each folder has its own `CLAUDE.md` with folder-specific rules.
 
-Each folder is a **git submodule** with its own repo: `backend/` → `tavangar79/payjoor-backend`, `admin/` → `tavangar79/payjoor-admin`, `web/` → `tavangar79/payjoor-web` (branch `main`). Clone with `git clone --recurse-submodules`, or run `git submodule update --init` after a plain clone. Commit and push inside the submodule first, then commit the updated submodule pointer in this repo.
+This root repo uses one branch, `master`. Each folder is a **git submodule** with its own repo: `backend/` → `tavangar79/payjoor-backend`, `admin/` → `tavangar79/payjoor-admin`, `web/` → `tavangar79/payjoor-web` (branch `main`). Clone with `git clone --recurse-submodules`, or run `git submodule update --init` after a plain clone. Commit and push inside the submodule first, then commit the updated submodule pointer in this repo.
 
 ## Commands (from the repo root)
 
@@ -28,8 +28,9 @@ Each folder is a **git submodule** with its own repo: `backend/` → `tavangar79
 
 ## Rules that apply everywhere
 
-- **Never publish without an admin's approval**, never use unofficial Instagram APIs or password logins, and always reply about the post's *author*, not tagged accounts (PRD §3, §5.2).
-- **Secrets** live in `backend/.env` (template: `backend/.env.example`) or encrypted in MongoDB. Never commit them or log them.
+- **Never publish without an admin's approval**, never log into Instagram with a password, and always reply about the post's *author*, not tagged accounts (PRD §3, §5.2).
+- **Instagram and AI go through BoxAPI only** (boxapi.ir, PRD §10; use the `boxapi` skill). That means the DM & Comment API for receiving DMs (`POST /webhooks/boxapi`) and sending replies, the Instagram Data API for posts, post owners and profiles, and the AI API for the Jev models. We have no Meta app, App Review, Graph token or token refresh. Apify and cost/budget tracking are gone. Don't add them back. The backend is hosted outside Iran, so use BoxAPI's non-Iran hosts.
+- **Secrets** live in `backend/.env` (template: `backend/.env.example`) or encrypted in MongoDB. Never commit them or log them. BoxAPI uses `BoxApiInstagramDMToken`, `BoxApiInstagramToken`, `BoxApiAIToken` and `BoxApiWebhookSecret`.
 - **Persian first:** `dir="rtl"` and Persian copy by default. Handles, URLs, emails and phone numbers are shown `dir="ltr"`.
 - **Design tokens only:** components use semantic token classes (`bg-surface`, `text-ink`, ...), never raw Tailwind palette colours.
 - Match the surrounding code: short header comment naming the PRD section, small modules, `.js` import extensions in the backend.
@@ -38,7 +39,8 @@ Each folder is a **git submodule** with its own repo: `backend/` → `tavangar79
 
 - `admin-ui` skill: any admin screen or component. Uses the **ui-ux-pro-max** skill.
 - `web-ui` skill: any public website page. Uses the **Taste** (`taste-design`) skill and the Meta legal-page rules.
-- `backend-module` skill: adding a model, route, queue/worker or Apify/Meta integration.
+- `backend-module` skill: adding a model, route, queue or worker.
+- `boxapi` skill: any call to Instagram or an AI model: the BoxAPI webhook, sending DMs, the Data API (posts, post owner, profile) and the AI API (Jev).
 - Agents: `frontend-developer` (admin/ and web/) and `backend-developer` (backend/).
 
 ## graphify
