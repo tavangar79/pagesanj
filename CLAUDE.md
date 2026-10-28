@@ -16,6 +16,8 @@ npm workspaces, three folders:
 
 Each folder has its own `CLAUDE.md` with folder-specific rules.
 
+Each folder is a **git submodule** with its own repo: `backend/` → `tavangar79/payjoor-backend`, `admin/` → `tavangar79/payjoor-admin`, `web/` → `tavangar79/payjoor-web` (branch `main`). Clone with `git clone --recurse-submodules`, or run `git submodule update --init` after a plain clone. Commit and push inside the submodule first, then commit the updated submodule pointer in this repo.
+
 ## Commands (from the repo root)
 
 - `npm install` installs all workspaces.
