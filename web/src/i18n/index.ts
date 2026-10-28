@@ -16,21 +16,38 @@ export type Strings = {
   titles: Record<PageId, string>;
   home: {
     eyebrow: string;
-    title: string;
+    // The hero headline: words, an accent phrase and inline visual capsules (DESIGN.md §4).
+    headline: (string | { accent: string } | { capsule: 'page' | 'dm' | 'verdict' })[];
+    verdict: string;
+    sendLabel: string;
+    sendExamples: string[];
     lede: string;
     cta: string;
     ctaNote: string;
     example: {
       label: string;
       caption: string;
+      today: string;
       shared: string;
+      sharedKind: string;
+      checking: string;
       reply: string[];
+      inputPlaceholder: string;
     };
-    how: { title: string; intro: string; steps: { title: string; body: string }[] };
-    sources: { title: string; items: { title: string; body: string }[] };
-    privacy: string;
+    how: {
+      eyebrow: string;
+      title: string;
+      intro: string;
+      steps: { title: string; body: string }[];
+      share: { title: string; send: string };
+      post: { author: string; tagged: string };
+      results: { found: string; wishlisted: string };
+    };
+    sources: { eyebrow: string; title: string; intro: string; items: { title: string; body: string }[] };
+    privacyBand: { eyebrow: string; title: string; facts: { value: string; label: string }[]; link: string };
+    final: { title: string; body: string };
   };
-  legal: { updatedLabel: string; updated: string; contentsLabel: string };
+  legal: { eyebrow: string; updatedLabel: string; updated: string; contentsLabel: string };
   privacy: LegalDoc;
   terms: LegalDoc;
   dataDeletion: LegalDoc;

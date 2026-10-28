@@ -1,28 +1,191 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+/* Self-hosted (the CSP allows only same-origin fonts). */
+@import "@fontsource-variable/vazirmatn";
 
-/* Semantic design tokens. TODO: copy the real values from
-   design-system/trust-me/MASTER.md (light and dark). Components use these
-   token classes (bg-surface, text-ink, ...), never raw palette colours. */
-@theme {
-  --font-sans: "Vazirmatn", system-ui, sans-serif;
-  --color-surface: #ffffff;
-  --color-ink: #111111;
-  --color-muted: #6b7280;
-  --color-border: #e5e7eb;
-  --color-primary: #111111;
-  --color-danger: #b91c1c;
+/* Semantic tokens from design-system/pagesanj/MASTER.md (light and dark). Components use these
+   token classes (bg-surface, text-ink, border-line, ...), never raw palette colours. */
+:root {
+  color-scheme: light;
+  --canvas: #f6f7f9;
+  --surface: #ffffff;
+  --subtle: #f1f3f6;
+  --line: #e3e6eb;
+  --line-strong: #c4cad4;
+  --ink: #0f172a;
+  --ink-2: #334155;
+  --ink-3: #576071;
+
+  --brand: #1d4ed8;
+  --brand-solid: #1d4ed8;
+  --brand-solid-hover: #1e40af;
+  --on-brand: #ffffff;
+  --brand-soft: #eef3ff;
+  --brand-line: #c7d6fe;
+
+  --danger: #b42318;
+  --danger-soft: #fef3f2;
+  --danger-line: #fecdca;
+  --danger-solid: #c4261b;
+  --warn: #b93815;
+  --warn-soft: #fff4ed;
+  --warn-line: #fcd9bd;
+  --warn-solid: #c4320a;
+  --caution: #8a4b06;
+  --caution-soft: #fffaeb;
+  --caution-line: #fedf89;
+  --caution-solid: #b54708;
+  --success: #067647;
+  --success-soft: #ecfdf3;
+  --success-line: #abefc6;
+  --success-solid: #067647;
+  --neutral-solid: #98a2b3;
+
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.05);
+  --shadow-raised: 0 4px 16px -4px rgb(15 23 42 / 0.12), 0 1px 2px rgb(15 23 42 / 0.05);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --color-surface: #111111;
-    --color-ink: #f5f5f5;
-    --color-muted: #9ca3af;
-    --color-border: #262626;
-    --color-primary: #f5f5f5;
+    color-scheme: dark;
+    --canvas: #0b0f17;
+    --surface: #111827;
+    --subtle: #1a2231;
+    --line: #263042;
+    --line-strong: #3a4558;
+    --ink: #f1f5f9;
+    --ink-2: #cbd5e1;
+    --ink-3: #9aa6b8;
+
+    --brand: #8fb0ff;
+    --brand-solid: #2f5be0;
+    --brand-solid-hover: #3d68ea;
+    --on-brand: #ffffff;
+    --brand-soft: #15213d;
+    --brand-line: #2a4380;
+
+    --danger: #fda29b;
+    --danger-soft: #2d1311;
+    --danger-line: #5e221d;
+    --danger-solid: #c4261b;
+    --warn: #fdb38a;
+    --warn-soft: #2b1709;
+    --warn-line: #5b3014;
+    --warn-solid: #c4320a;
+    --caution: #fdd073;
+    --caution-soft: #2a1f06;
+    --caution-line: #5a430c;
+    --caution-solid: #b54708;
+    --success: #75e0a7;
+    --success-soft: #0b2619;
+    --success-line: #155235;
+    --success-solid: #067647;
+    --neutral-solid: #667085;
+
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-raised: 0 8px 24px -8px rgb(0 0 0 / 0.6), 0 1px 2px rgb(0 0 0 / 0.4);
   }
 }
 
-body {
-  @apply bg-surface text-ink font-sans;
+/* shadcn/ui theme variables, aliased to the tokens so primitives need no dark: handling. */
+:root {
+  --radius: 0.75rem;
+  --background: var(--canvas);
+  --foreground: var(--ink);
+  --card: var(--surface);
+  --card-foreground: var(--ink);
+  --popover: var(--surface);
+  --popover-foreground: var(--ink);
+  --primary: var(--brand-solid);
+  --primary-foreground: var(--on-brand);
+  --secondary: var(--subtle);
+  --secondary-foreground: var(--ink);
+  --muted: var(--subtle);
+  --muted-foreground: var(--ink-3);
+  --accent: var(--subtle);
+  --accent-foreground: var(--ink);
+  --destructive: var(--danger-solid);
+  --border: var(--line);
+  --input: var(--line-strong);
+  --ring: var(--brand);
+}
+
+@theme inline {
+  --font-sans: "Vazirmatn Variable", Tahoma, system-ui, sans-serif;
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-subtle: var(--subtle);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-brand: var(--brand);
+  --color-brand-solid: var(--brand-solid);
+  --color-brand-solid-hover: var(--brand-solid-hover);
+  --color-on-brand: var(--on-brand);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-line: var(--brand-line);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-line: var(--danger-line);
+  --color-danger-solid: var(--danger-solid);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-warn-line: var(--warn-line);
+  --color-warn-solid: var(--warn-solid);
+  --color-caution: var(--caution);
+  --color-caution-soft: var(--caution-soft);
+  --color-caution-line: var(--caution-line);
+  --color-caution-solid: var(--caution-solid);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-success-line: var(--success-line);
+  --color-success-solid: var(--success-solid);
+  --color-neutral-solid: var(--neutral-solid);
+  --shadow-card: var(--shadow-card);
+  --shadow-raised: var(--shadow-raised);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-line;
+  }
+  body {
+    @apply bg-canvas text-ink-2 font-sans antialiased;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 }

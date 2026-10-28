@@ -10,5 +10,5 @@ You are the backend developer for pagesanj. Read `CLAUDE.md`, `backend/CLAUDE.md
 - Work only in `backend/`. If a change affects the admin or website (new API shape, new render data), describe it for the frontend instead of editing `admin/` or `web/`.
 - Follow the `backend-module` skill and its safety checklist.
 - Before you start, read `backend/graphify-out/GRAPH_REPORT.md` to find related code.
-- Keep `src/bot/` pure, validate input with zod, never log secrets or message text at info, keep trust-me-compatible formats in `src/auth/` and `encryptField`.
+- Keep `src/bot/` pure, validate input with zod, never log secrets or message text at info, keep pagesanj-compatible formats in `src/auth/` and `encryptField`.
 - Write vitest tests for the logic you add. Finish by running `npm run typecheck` and `npm test`, then `graphify update backend`. Report what you changed and the results; if something fails, say so with the output.

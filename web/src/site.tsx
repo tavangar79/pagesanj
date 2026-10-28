@@ -10,8 +10,8 @@ export type Site = {
   companyName: string;
 };
 
-// PRD §7.2 names the account @trustme; SITE_INSTAGRAM_HANDLE overrides it.
-export const DEFAULT_HANDLE = 'trustme';
+// PRD §7.2 names the account @pagesanj; SITE_INSTAGRAM_HANDLE overrides it.
+export const DEFAULT_HANDLE = 'pagesanj';
 
 export const SiteContext = createContext<Site | null>(null);
 
@@ -25,5 +25,8 @@ export const instagramUrl = (handle: string) => `https://www.instagram.com/${han
 // Opens a DM thread with the account in the Instagram app or website.
 export const directUrl = (handle: string) => `https://ig.me/m/${handle}`;
 
-export const formatNumber = (locale: Locale, n: number) =>
-  new Intl.NumberFormat(locale === 'fa' ? 'fa-IR' : 'en-US').format(n);
+export const formatNumber = (locale: Locale, n: number, digits = 1) =>
+  new Intl.NumberFormat(locale === 'fa' ? 'fa-IR' : 'en-US', {
+    minimumIntegerDigits: digits,
+    useGrouping: false,
+  }).format(n);

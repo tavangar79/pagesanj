@@ -4,7 +4,7 @@ import type { Strings } from './index';
 export const en: Strings = {
   languageName: 'English',
   otherLocale: 'fa',
-  brand: 'Trust Me',
+  brand: 'Pagesanj',
   skipLink: 'Skip to content',
   nav: {
     home: 'Home',
@@ -14,7 +14,7 @@ export const en: Strings = {
     label: 'Legal pages',
   },
   titles: {
-    home: 'Trust Me: check an Instagram page before you buy',
+    home: 'Pagesanj: check an Instagram page before you buy',
     privacy: 'Privacy Policy',
     terms: 'Terms of Use',
     dataDeletion: 'Data Deletion',
@@ -23,15 +23,35 @@ export const en: Strings = {
   },
   home: {
     eyebrow: 'Instagram DM assistant',
-    title: 'Before you buy from an Instagram page, ask us about it.',
+    headline: [
+      'Before you buy from',
+      { capsule: 'page' },
+      'an Instagram page,',
+      { capsule: 'dm' },
+      { accent: 'ask us first.' },
+      { capsule: 'verdict' },
+    ],
+    verdict: 'Reviewed',
+    sendLabel: 'You can send',
     lede:
       'Send {handle} a page or one of its posts in a direct message. We reply with what reviewer pages have published about it: their review posts, the page’s status and links you can check yourself.',
-    cta: 'Message {handle} on Instagram',
-    ctaNote: 'Free. Works inside Instagram, no sign-up.',
+    cta: 'Message {handle}',
+    ctaNote: 'Opens a chat in Instagram.',
+    sendExamples: [
+      'A shared profile',
+      '@sample.shop',
+      'A shared post',
+      'instagram.com/sample.shop',
+      'A reel link',
+      'instagram.com/p/…',
+    ],
     example: {
       label: 'Example conversation',
       caption: 'An illustration of the reply format. The page and review shown are not real.',
+      today: 'Today',
       shared: '@sample.shop',
+      sharedKind: 'Instagram profile',
+      checking: 'Checking… one moment.',
       reply: [
         'Sample Shop (@sample.shop)',
         'Status: Recommended (tested)',
@@ -39,10 +59,12 @@ export const en: Strings = {
         '• @reviewer.page: order arrived on time and matched the photos.',
         'instagram.com/p/…',
       ],
+      inputPlaceholder: 'Message…',
     },
     how: {
-      title: 'How it works',
-      intro: 'Three steps, all inside your Instagram inbox.',
+      eyebrow: 'How it works',
+      title: 'Three steps, all in your inbox.',
+      intro: 'No app to install and no account to create. Everything happens in the Instagram chat you already use.',
       steps: [
         {
           title: 'Send us the page',
@@ -57,9 +79,14 @@ export const en: Strings = {
           body: 'If we have reviewed the page, we reply with its status and the newest review posts. If not, we add it to our review list and tell you so.',
         },
       ],
+      share: { title: 'Share', send: 'Send' },
+      post: { author: 'Author', tagged: 'Tagged' },
+      results: { found: 'Recommended (tested)', wishlisted: 'Added to review list' },
     },
     sources: {
+      eyebrow: 'Our sources',
       title: 'Where the answers come from',
+      intro: 'Every answer points back to posts you can open and read yourself.',
       items: [
         {
           title: 'Published reviews, checked by a person',
@@ -71,24 +98,37 @@ export const en: Strings = {
         },
       ],
     },
-    privacy:
-      'We use your message only to answer it, and delete our message logs after 90 days. Read the [privacy policy](privacy).',
+    privacyBand: {
+      eyebrow: 'Privacy',
+      title: 'We use your message only to answer it.',
+      facts: [
+        { value: '90 days', label: 'Message logs are deleted automatically.' },
+        { value: 'No ads', label: 'We never sell your data or use it for advertising.' },
+        { value: 'Any time', label: 'Ask us to delete your data whenever you like.' },
+      ],
+      link: 'Read the [privacy policy](privacy)',
+    },
+    final: {
+      title: 'Have a page in mind?',
+      body: 'Send it to {handle} and see what reviewers have said about it.',
+    },
   },
   legal: {
+    eyebrow: 'Legal',
     updatedLabel: 'Last updated',
     updated: '23 October 2026',
     contentsLabel: 'On this page',
   },
   privacy: {
     intro: [
-      'This policy explains what Trust Me collects when you send a direct message to our Instagram account {handle}, why, how long we keep it, and how to have it deleted. Trust Me is operated by {company}.',
+      'This policy explains what Pagesanj collects when you send a direct message to our Instagram account {handle}, why, how long we keep it, and how to have it deleted. Pagesanj is operated by {company}.',
     ],
     sections: [
       {
         id: 'who',
         heading: 'Who we are',
         body: [
-          'The Trust Me app is an Instagram messaging assistant operated by {company} ("we", "us"). It answers questions about Instagram shop pages using reviews published by independent reviewer pages. You can reach us at {email}.',
+          'The Pagesanj app is an Instagram messaging assistant operated by {company} ("we", "us"). It answers questions about Instagram shop pages using reviews published by independent reviewer pages. You can reach us at {email}.',
         ],
       },
       {
@@ -149,7 +189,7 @@ export const en: Strings = {
         id: 'children',
         heading: 'Children',
         body: [
-          'Trust Me is not intended for anyone under the minimum age Instagram requires to have an account.',
+          'Pagesanj is not intended for anyone under the minimum age Instagram requires to have an account.',
         ],
       },
       {
@@ -168,14 +208,14 @@ export const en: Strings = {
   },
   terms: {
     intro: [
-      'These terms apply when you use Trust Me, the Instagram messaging assistant at {handle}, and this website. Trust Me is operated by {company}. By sending us a message you agree to these terms.',
+      'These terms apply when you use Pagesanj, the Instagram messaging assistant at {handle}, and this website. Pagesanj is operated by {company}. By sending us a message you agree to these terms.',
     ],
     sections: [
       {
         id: 'service',
         heading: 'The service',
         body: [
-          'Trust Me answers questions about Instagram pages. You send us a page or a post; we reply with information we hold about that page, such as review posts published by reviewer pages we follow, a status label and links. The service is free.',
+          'Pagesanj answers questions about Instagram pages. You send us a page or a post; we reply with information we hold about that page, such as review posts published by reviewer pages we follow, a status label and links. The service is free.',
         ],
       },
       {
@@ -197,14 +237,14 @@ export const en: Strings = {
         id: 'use',
         heading: 'Using the service',
         body: [
-          'Please use Trust Me for its purpose: asking about pages. Do not send spam, automated messages or unlawful content, and do not try to disrupt the service. We limit how many messages one account can trigger and may stop answering an account that abuses the service. You must also follow Instagram’s own terms.',
+          'Please use Pagesanj for its purpose: asking about pages. Do not send spam, automated messages or unlawful content, and do not try to disrupt the service. We limit how many messages one account can trigger and may stop answering an account that abuses the service. You must also follow Instagram’s own terms.',
         ],
       },
       {
         id: 'third-party',
         heading: 'Third-party content and links',
         body: [
-          'Review posts belong to the reviewer pages that published them. Our answers link to Instagram, which we do not control. Trust Me is not affiliated with, endorsed by or sponsored by Meta or Instagram.',
+          'Review posts belong to the reviewer pages that published them. Our answers link to Instagram, which we do not control. Pagesanj is not affiliated with, endorsed by or sponsored by Meta or Instagram.',
         ],
       },
       {
@@ -242,7 +282,7 @@ export const en: Strings = {
   },
   dataDeletion: {
     intro: [
-      'You can ask us to delete the data Trust Me holds about you at any time. This page explains how, what gets deleted and how long it takes.',
+      'You can ask us to delete the data Pagesanj holds about you at any time. This page explains how, what gets deleted and how long it takes.',
     ],
     sections: [
       {
@@ -259,7 +299,7 @@ export const en: Strings = {
           'Choose any one of these options:',
           {
             steps: [
-              'Remove the app in Instagram: open Instagram, go to Settings, then Website permissions, then Apps and websites. Find Trust Me under Active and choose Remove. Instagram tells us, we delete your data automatically, and you receive a confirmation code.',
+              'Remove the app in Instagram: open Instagram, go to Settings, then Website permissions, then Apps and websites. Find Pagesanj under Active and choose Remove. Instagram tells us, we delete your data automatically, and you receive a confirmation code.',
               'Send a direct message to {handle} saying you want your data deleted.',
               'Email {email} with your Instagram username and a request to delete your data.',
             ],
@@ -305,6 +345,6 @@ export const en: Strings = {
     about: 'Answers about Instagram shop pages, from published reviews, in your Instagram inbox.',
     contact: 'Contact',
     legal: 'Legal',
-    rights: 'Trust Me is operated by {company}. Not affiliated with Meta or Instagram.',
+    rights: 'Pagesanj is operated by {company}. Not affiliated with Meta or Instagram.',
   },
 };

@@ -1,4 +1,4 @@
-# PRD: trust-me Instagram Bot (v1)
+# PRD: pagesanj Instagram Bot (v1)
 
 - **Status:** Draft for build
 - **Date:** 2026-10-22
@@ -11,7 +11,7 @@
 
 A standalone backend service, built with Node.js, Express and MongoDB, that does three things:
 
-1. **DM lookup bot.** Someone DMs trust-me's Instagram account a shop's profile or post. The bot replies with what we know about that shop: its review posts, its tags and a link. If we know nothing, the shop goes on a review wishlist.
+1. **DM lookup bot.** Someone DMs pagesanj's Instagram account a shop's profile or post. The bot replies with what we know about that shop: its review posts, its tags and a link. If we know nothing, the shop goes on a review wishlist.
 2. **Daily reviewer-page check.** Once a day, Apify pulls new posts from reviewer pages we follow (e.g. `@sadegh.delicious`). Each new post becomes a **pending review** on the shop the post tags.
 3. **Bilingual landing page (EN/FA).** A public site with the pages Meta needs to approve the app (privacy policy, terms, data deletion).
 
@@ -43,7 +43,7 @@ The full public website (shop pages, search) is **out of scope**. It comes a few
 
 **Anti-goals (a failure even if it technically works)**
 - Publishing anything without an admin's approval.
-- Logging into Instagram with a username and password, or using any unofficial or private Instagram API, which risks a ban on trust-me's account.
+- Logging into Instagram with a username and password, or using any unofficial or private Instagram API, which risks a ban on pagesanj's account.
 - Replying with a wrong shop, for example the shop tagged in a post instead of the post's author (see §5.2).
 - Leaking secrets such as tokens, or storing more personal data about the people who DM us than the bot needs.
 
@@ -59,7 +59,7 @@ The full public website (shop pages, search) is **out of scope**. It comes a few
 
 ### 5.1 Flow
 
-1. A user sends trust-me's Instagram Business account a DM.
+1. A user sends pagesanj's Instagram Business account a DM.
 2. Meta sends a webhook to `POST /webhooks/instagram`. We check the `X-Hub-Signature-256` HMAC (using the app secret), add one job per message to the **BullMQ** queue `dm-inbound` with `jobId = mid` (so Meta's retries don't create duplicate jobs), and return `200` right away. A worker processes steps 3–8.
    - **Retries:** 3 attempts with exponential backoff for temporary failures (Graph API 5xx, Apify timeouts). After the last attempt, the job stays in the failed set and is logged in `dmEvents.error`.
    - **Slow step on its own queue:** the post-owner lookup (§5.3) runs on a separate `post-owner` queue with low concurrency (e.g. 2), so a slow Apify call doesn't hold up profile lookups. When it finishes, it re-enqueues the DM job to finish the reply.
@@ -101,7 +101,7 @@ The full public website (shop pages, search) is **out of scope**. It comes a few
 - **Link: not in v1 (decided).** There's no website yet, so the reply has no link to our site. It will be added once the website exists. Keep the reply builder ready to take an optional link later, but don't add the setting now.
 - If the shop exists but has **no published reviews yet**, say "on our list, not reviewed yet" and don't show any tags.
 
-**Not found:** "We haven't reviewed this page yet. We've added it to our review list." The wording follows the existing trust-me copy: «اگر تجربه‌ای از خرید از این پیج دارید یا می‌خواهید بررسی شود…»
+**Not found:** "We haven't reviewed this page yet. We've added it to our review list." The wording follows the existing pagesanj copy: «اگر تجربه‌ای از خرید از این پیج دارید یا می‌خواهید بررسی شود…»
 
 **Formatting:** plain text with line breaks. Instagram DMs don't render markdown. Quick replies or a generic template card are allowed later.
 
@@ -122,7 +122,7 @@ Every shop has a profile image, and has the contact details its own Instagram pa
 - **Image:** download it straight away (the Instagram link expires), check that it's a real JPEG, PNG or WebP of at most 2 MB, and store it in `shopImages`. If the fetch fails, the admin must upload an image before the shop can be saved.
 - **Contact details:** copy only what the page itself publishes. Normalise the email (lowercase), the website (full `https://` URL) and the phone (international form). The admin can correct or clear a field, and can add one the page shows but the scrape missed (e.g. a number written in the bio). Nothing is taken from other sources, such as reviewer posts or DMs.
 - **Refresh:** a refresh replaces the image (if it changed) and the contact fields, and sets `profileFetchedAt`. A field the page no longer shows is cleared.
-- **Not the same as trust-me's sensitive identifiers.** trust-me keeps phone numbers it collects as evidence encrypted and never public. The `contact.phone` here is different: it's the number the shop itself advertises on its page, so it's public by nature. Never copy a phone number into `contact` from anywhere but the shop's own page.
+- **Not the same as pagesanj's sensitive identifiers.** pagesanj keeps phone numbers it collects as evidence encrypted and never public. The `contact.phone` here is different: it's the number the shop itself advertises on its page, so it's public by nature. Never copy a phone number into `contact` from anywhere but the shop's own page.
 
 ## 6. Feature 2: Daily reviewer-page check (Apify)
 
@@ -157,7 +157,7 @@ Every shop has a profile image, and has the contact details its own Instagram pa
 
 - **The tagged shop exists** (by `handle` or `previousHandles`): create a review with `status: pending`, `sourceType: reviewer_post`, `reviewerSourceId`, `postShortcode`, `postUrl` (canonical `https://www.instagram.com/p/<code>/`), `occurredAt = post timestamp`, `caption`, media URLs, `paidPartnership` and `raw`.
 - **The tagged shop doesn't exist:** *(builder's call, revisit if wrong)* create or increment a **wishlist** entry with `source: reviewer_post` and attach the pending review to that entry. When an admin promotes the entry to a shop, its pending reviews move to the new shop.
-- **Uniqueness:** only one live (pending or published) review per (shop or wishlist entry, `postShortcode`). Enforce it with a unique partial index, as trust-me does.
+- **Uniqueness:** only one live (pending or published) review per (shop or wishlist entry, `postShortcode`). Enforce it with a unique partial index, as pagesanj does.
 - **Outcome and direction aren't guessed.** A scraped post doesn't reliably say whether the experience was good. Pending reviews leave `outcome` and `direction` empty, and **the admin must set both before approving.** `paidPartnership: true` is shown to the admin as a warning.
 
 ## 7. Feature 3: Landing page (EN/FA)
@@ -166,7 +166,7 @@ Meta's review needs a real public presence. The landing page is its own React ap
 
 ### 7.1 Design (Taste skill)
 
-- **Design with the Taste skill (`taste-design`):** use it for the landing page's look, layout, typography and copy rhythm, so it reads as a real, trustworthy product and not a template. Keep trust-me's brand: the same colour tokens and the Vazirmatn font, in light and dark mode.
+- **Design with the Taste skill (`taste-design`):** use it for the landing page's look, layout, typography and copy rhythm, so it reads as a real, trustworthy product and not a template. The design system is `web/DESIGN.md` (Taste defaults, its own palette with one green accent, Geist for Latin and Vazirmatn for Persian, light and dark mode).
 - **The legal pages are Meta requirements first and design second.** The Taste styling may shape them (typography, spacing, header and footer), but must never hide, collapse, shorten or move their text behind interactions. No accordions, tabs or "read more" on legal text.
 - **The content is in the HTML.** Every page is server-rendered (React `renderToString` from `web/`'s SSR build), with the full text in the first response. No client JavaScript is needed: the language switcher is plain links, and the deletion-status check is a plain `GET` form. Hydration is optional and must not change the text. It must not need JavaScript to show text, and must not show cookie walls, login walls, pop-ups or interstitials. Meta's reviewers and crawler must be able to read every page as plain HTML. Animations are optional and respect `prefers-reduced-motion`.
 - **Persian pages:** `dir="rtl"`, a language switcher on every page, a mobile-first layout, and contrast of at least 4.5:1.
@@ -175,7 +175,7 @@ Meta's review needs a real public presence. The landing page is its own React ap
 
 | Route | Content |
 |---|---|
-| `/fa`, `/en` (root `/` redirects by `Accept-Language`, default `fa`) | What trust-me is and how to use the bot ("share a page or post with @trustme in a DM"), plus a link to the Instagram account. |
+| `/fa`, `/en` (root `/` redirects by `Accept-Language`, default `fa`) | What pagesanj is and how to use the bot ("share a page or post with @pagesanj in a DM"), plus a link to the Instagram account. |
 | `/fa/privacy`, `/en/privacy` | Privacy policy (§7.3). |
 | `/fa/terms`, `/en/terms` | Terms of use, and a disclaimer that answers are informational. |
 | `/fa/data-deletion`, `/en/data-deletion` | Deletion instructions (§7.3), plus a form to check a confirmation code's status. |
@@ -206,7 +206,7 @@ Meta's review needs a real public presence. The landing page is its own React ap
 
 ## 8. Data model (MongoDB, Mongoose)
 
-The model stays close to trust-me's, so the future website (or a merge back into trust-me) is a straightforward move.
+The model stays close to pagesanj's, so the future website (or a merge back into pagesanj) is a straightforward move.
 
 In the tables below, `?` marks an optional field. Unless a table says otherwise, every collection also has `createdAt` and `updatedAt` (Mongoose `timestamps`). Handles are always stored normalised: lowercase, with no `@`.
 
@@ -218,7 +218,7 @@ In the tables below, `?` marks an optional field. Unless a table says otherwise,
 | `displayName` | string | Shop name shown in replies and in the admin panel. |
 | `handle` | string, unique | The shop's current Instagram handle; the main lookup key for DMs. |
 | `previousHandles` | string[] | Old handles after a rename. Lookups check these too, so an old handle still finds the shop. |
-| `status` | enum: `serious_warning \| warning \| mixed \| recommended \| no_known_issues` | Overall trust verdict (same values as trust-me). Shown as the status label in replies. |
+| `status` | enum: `serious_warning \| warning \| mixed \| recommended \| no_known_issues` | Overall trust verdict (same values as pagesanj). Shown as the status label in replies. |
 | `tags` | string[] | Admin-defined labels, e.g. "slow delivery" or "good packaging", shown in replies. |
 | `categoryIds` | ObjectId[] → `categories` | What the shop sells, picked from the admin-managed category list. Never free text. |
 | `bio?` | string | Short admin-written description, for the future website. |
@@ -232,7 +232,7 @@ In the tables below, `?` marks an optional field. Unless a table says otherwise,
 |---|---|---|
 | `name` | string | Persian name, e.g. «پوشاک». |
 | `nameEn?` | string | English name, for English replies. Falls back to `name`. |
-| `nameNormalized` | string, unique | `name` with Persian/Arabic letters and digits normalised (as trust-me's `normalizeFa`), so the same category can't be added twice with different spellings. |
+| `nameNormalized` | string, unique | `name` with Persian/Arabic letters and digits normalised (as pagesanj's `normalizeFa`), so the same category can't be added twice with different spellings. |
 | `slug` | string, unique | URL-safe ID for the future website's category pages. |
 
 A category in use by any shop can't be deleted; the admin must move those shops first.
@@ -258,7 +258,7 @@ A category in use by any shop can't be deleted; the admin must move those shops 
 | `backfillDone` | boolean | Whether the first-time history fetch has finished. |
 | `lastSeenShortcode?` | string | Shortcode of the newest (non-pinned) post we stored; the daily check's starting point. |
 | `lastSeenPostAt?` | date | Publish time of that post. |
-| `permission` | enum: `link_only \| screenshot \| embed`, default `link_only` | What the reviewer allows us to show: only a link, a screenshot, or an embedded post (as in trust-me). |
+| `permission` | enum: `link_only \| screenshot \| embed`, default `link_only` | What the reviewer allows us to show: only a link, a screenshot, or an embedded post (as in pagesanj). |
 
 ### `reviews`: one reviewer post about one shop
 
@@ -266,7 +266,7 @@ A category in use by any shop can't be deleted; the admin must move those shops 
 |---|---|---|
 | `shopId?` | ObjectId → `shops` | The shop this review is about. Exactly one of `shopId` and `wishlistId` is set. |
 | `wishlistId?` | ObjectId → `wishlist` | Set instead of `shopId` when the tagged business isn't a shop yet; moved to `shopId` when the wishlist entry is promoted. |
-| `sourceType` | enum: `reviewer_post` | Where the review came from. Only reviewer posts in v1; kept for compatibility with trust-me. |
+| `sourceType` | enum: `reviewer_post` | Where the review came from. Only reviewer posts in v1; kept for compatibility with pagesanj. |
 | `reviewerSourceId` | ObjectId → `reviewerSources` | The reviewer page that published the post. |
 | `postShortcode` | string | Instagram post code (the `Deyc1w9hwTI` in `/p/Deyc1w9hwTI/`). Unique per shop or wishlist entry among live reviews. |
 | `postUrl` | string | Canonical post link (`https://www.instagram.com/p/<code>/`), shown in replies. |
@@ -276,7 +276,7 @@ A category in use by any shop can't be deleted; the admin must move those shops 
 | `paidPartnership` | boolean | Instagram's "paid partnership" flag; shown to the admin as a warning that the post is sponsored. |
 | `raw` | object | The full Apify item, kept so we can re-parse later without paying again. |
 | `status` | enum: `pending \| published \| rejected` | Moderation state. Only `published` reviews appear in DM replies. |
-| `outcome?` | enum (trust-me's `OUTCOMES`) | What happened to the buyer, e.g. `delivered_ok` or `not_delivered`. Set by the admin; required to publish. |
+| `outcome?` | enum (pagesanj's `OUTCOMES`) | What happened to the buyer, e.g. `delivered_ok` or `not_delivered`. Set by the admin; required to publish. |
 | `direction?` | enum: `positive \| negative \| mixed` | Overall tone of the review. Set by the admin; required to publish. |
 | `summary?` | string | One-line admin-written summary, shown in DM replies. |
 | `rejectReason?` | string | Why the admin rejected it, e.g. "not a review", "ad". |
@@ -341,7 +341,7 @@ A category in use by any shop can't be deleted; the admin must move those shops 
 
 | Field | Type | Description |
 |---|---|---|
-| `accessTokenEnc` | string | The long-lived token, encrypted with `DATA_ENCRYPTION_KEY` (trust-me's `encryptField`, its own AAD `meta:token`). Seeded from `IG_ACCESS_TOKEN`, then replaced by each refresh (§10). |
+| `accessTokenEnc` | string | The long-lived token, encrypted with `DATA_ENCRYPTION_KEY` (pagesanj's `encryptField`, its own AAD `meta:token`). Seeded from `IG_ACCESS_TOKEN`, then replaced by each refresh (§10). |
 | `expiresAt` | date | When the token expires (60 days after the last refresh). |
 | `refreshedAt` | date | Last successful refresh. |
 
@@ -350,13 +350,13 @@ A category in use by any shop can't be deleted; the admin must move those shops 
 | Field | Type | Description |
 |---|---|---|
 | `username` | string, unique, lowercase | Login name. |
-| `passwordHash` | string | scrypt hash in trust-me's format (`scrypt$N$r$p$<salt>$<hash>`, N=16384, r=8, p=1); the password itself is never stored. |
-| `totpSecretEnc` | string | The authenticator (TOTP) secret, encrypted exactly as trust-me does it (§9.1). |
-| `role` | enum: `owner \| moderator`, default `owner` | As in trust-me. |
+| `passwordHash` | string | scrypt hash in pagesanj's format (`scrypt$N$r$p$<salt>$<hash>`, N=16384, r=8, p=1); the password itself is never stored. |
+| `totpSecretEnc` | string | The authenticator (TOTP) secret, encrypted exactly as pagesanj does it (§9.1). |
+| `role` | enum: `owner \| moderator`, default `owner` | As in pagesanj. |
 | `lastTotpStep?` | number | The last 30-second code step used to log in, so a code can't be used twice. |
 | `lastLoginAt?` | date | Last successful login. |
 
-### `loginAttempts`: failed-login lockout (as in trust-me)
+### `loginAttempts`: failed-login lockout (as in pagesanj)
 
 | Field | Type | Description |
 |---|---|---|
@@ -370,22 +370,22 @@ A category in use by any shop can't be deleted; the admin must move those shops 
 A **React** app at `/admin`, built with **Tailwind CSS** and **shadcn/ui** components, with session login and CSRF protection.
 
 - **Build:** Vite + React + TypeScript (*builder's call*). Express serves the built files at `/admin` and a JSON API at `/admin/api/*`. The API uses the same session cookie and checks the CSRF token on every write.
-- **Design:** use the **ui-ux-pro-max** skill to plan the design system and check each screen before it's built. Start from trust-me's design system (`design-system/trust-me/MASTER.md`: semantic colour tokens, Vazirmatn, light and dark mode) so both products look like one brand.
+- **Design:** use the **ui-ux-pro-max** skill to plan the design system and check each screen before it's built. Start from pagesanj's design system (`design-system/pagesanj/MASTER.md`: semantic colour tokens, Vazirmatn, light and dark mode) so both products look like one brand.
 - **Components:** shadcn/ui (Radix-based), themed only through the design tokens. Components use token classes such as `bg-surface` and `text-ink`, never raw Tailwind palette colours.
 - **Persian first:** `dir="rtl"` and Persian labels. Handles, URLs, emails and phone numbers are shown `dir="ltr"`.
 - **Layout:** a sidebar with the screens below, which collapses to a top bar on mobile. Tables for lists, cards for detail views, and clear empty, loading and error states. Every action button shows a pending state, and destructive actions (reject, dismiss, delete category) ask for confirmation.
 - **Accessibility:** keyboard-usable everywhere, visible focus rings, labels on every input, and text contrast of at least 4.5:1 in both themes.
 
-### 9.1 Admin login with two-step verification (same as trust-me, same key)
+### 9.1 Admin login with two-step verification (same as pagesanj, same key)
 
-Login works exactly like trust-me's admin login: **username + password + a 6-digit authenticator code**, all on one form. There is no login without the code, and no "skip" or "remember this device".
+Login works exactly like pagesanj's admin login: **username + password + a 6-digit authenticator code**, all on one form. There is no login without the code, and no "skip" or "remember this device".
 
-- **Same key:** each admin uses the **same authenticator secret as in trust-me**, so the code from the admin's existing "TrustMe" entry in their authenticator app works for both panels. No new QR code to scan.
-- **How the secret is shared:** the bot uses **the same `DATA_ENCRYPTION_KEY`** as trust-me (base64 of 32 bytes). The secret is stored with trust-me's `encryptField` format (AES-256-GCM, `v1:<iv>:<tag>:<ciphertext>`, AAD `admin:totp`). A trust-me `adminaccounts` record can then be copied to the bot's `admins` as is, with the same password hash and the same encrypted secret.
-- **Moving admins over:** a script `npm run admin:import -- <username>` reads the account from trust-me's database (`TRUSTME_MONGODB_URI`, read-only) and copies `username`, `passwordHash`, `totpSecretEnc` and `role`. `npm run admin:create -- <username>` (password from `ADMIN_PASSWORD`, never an argument) still exists for a bot-only admin. It prints the `otpauth://` URL and base32 secret once, with issuer `TrustMe`.
-- **TOTP rules (copy trust-me's `src/server/auth/totp.ts`):** RFC 6238, SHA-1, 6 digits, 30-second steps. Accept the previous, current and next step, compared in constant time. Reject a step that isn't newer than `lastTotpStep` (no replay), and update `lastTotpStep` atomically with the login.
-- **Lockout (copy trust-me's `login.ts`):** reserve an attempt per `<ip>|<username>` **before** checking the credentials. After 5 failures in 15 minutes, lock for 15 minutes. The error message is the same for a wrong username, password or code, and for a locked account.
-- **Session:** after login, the same signed-cookie session as trust-me (`SESSION_SECRET`, httpOnly, secure, sameSite), checked on every `/admin/api/*` call and on `/admin/queues`.
+- **Same key:** each admin uses the **same authenticator secret as in pagesanj**, so the code from the admin's existing "Pagesanj" entry in their authenticator app works for both panels. No new QR code to scan.
+- **How the secret is shared:** the bot uses **the same `DATA_ENCRYPTION_KEY`** as pagesanj (base64 of 32 bytes). The secret is stored with pagesanj's `encryptField` format (AES-256-GCM, `v1:<iv>:<tag>:<ciphertext>`, AAD `admin:totp`). A pagesanj `adminaccounts` record can then be copied to the bot's `admins` as is, with the same password hash and the same encrypted secret.
+- **Moving admins over:** a script `npm run admin:import -- <username>` reads the account from pagesanj's database (`PAGESANJ_MONGODB_URI`, read-only) and copies `username`, `passwordHash`, `totpSecretEnc` and `role`. `npm run admin:create -- <username>` (password from `ADMIN_PASSWORD`, never an argument) still exists for a bot-only admin. It prints the `otpauth://` URL and base32 secret once, with issuer `Pagesanj`.
+- **TOTP rules (copy pagesanj's `src/server/auth/totp.ts`):** RFC 6238, SHA-1, 6 digits, 30-second steps. Accept the previous, current and next step, compared in constant time. Reject a step that isn't newer than `lastTotpStep` (no replay), and update `lastTotpStep` atomically with the login.
+- **Lockout (copy pagesanj's `login.ts`):** reserve an attempt per `<ip>|<username>` **before** checking the credentials. After 5 failures in 15 minutes, lock for 15 minutes. The error message is the same for a wrong username, password or code, and for a locked account.
+- **Session:** after login, the same signed-cookie session as pagesanj (`SESSION_SECRET`, httpOnly, secure, sameSite), checked on every `/admin/api/*` call and on `/admin/queues`.
 - **Login screen:** a shadcn card (username, password, code with `inputMode="numeric"` and `autocomplete="one-time-code"`), in the same style as the rest of the admin panel.
 
 ### 9.2 Screens
@@ -399,7 +399,7 @@ Login works exactly like trust-me's admin login: **username + password + a 6-dig
 
 ## 10. Meta setup (development mode first)
 
-1. Create a Meta app with the **Instagram API with Instagram Login** product, using trust-me's **Instagram Business (or Creator) account** (the company is registered outside Iran).
+1. Create a Meta app with the **Instagram API with Instagram Login** product, using pagesanj's **Instagram Business (or Creator) account** (the company is registered outside Iran).
 2. In development mode, generate the access token in the app dashboard. Permissions: `instagram_business_basic`, `instagram_business_manage_messages`.
 3. Subscribe the webhook to the `messages` field. Verification is `GET /webhooks/instagram` with `hub.mode`, `hub.verify_token` and `hub.challenge`.
 4. **Development mode limit:** the bot only receives DMs from accounts with a role on the app (admins and testers). That's enough to build and demo everything.
@@ -411,8 +411,8 @@ Login works exactly like trust-me's admin login: **username + password + a 6-dig
 ## 11. Tech stack and architecture
 
 - **Runtime:** Node.js LTS (22 or later), Express, MongoDB with Mongoose.
-- **Language:** *builder's call:* TypeScript, run with `tsx` in development and compiled with `tsc` for production. This matches trust-me and makes the later website share types.
-- **Validation:** zod (as in trust-me). **Tests:** vitest with mongodb-memory-server (as in trust-me).
+- **Language:** *builder's call:* TypeScript, run with `tsx` in development and compiled with `tsc` for production. This matches pagesanj and makes the later website share types.
+- **Validation:** zod (as in pagesanj). **Tests:** vitest with mongodb-memory-server (as in pagesanj).
 - **Queue:** **BullMQ** on **Redis**.
   - Queues: `dm-inbound`, `post-owner`, `dm-send`, `apify-daily`, `apify-backfill`, `apify-profile` (shop profile fetch, §5.6), `token-refresh`.
   - Workers run in a separate process (`npm run worker`) from the Express web process, so the webhook stays fast.
@@ -427,9 +427,9 @@ Login works exactly like trust-me's admin login: **username + password + a 6-dig
   - `backend/src/models/`, `backend/src/jobs/`, `backend/src/i18n/` (fa, en strings for bot replies).
   - `admin/`: the admin React app (Vite, Tailwind, shadcn/ui under `admin/src/components/ui`). Its build output is served by Express.
   - `web/`: the public website React app (Vite, Tailwind), with the landing and legal pages (§7) and its own fa/en strings in `web/src/i18n/`. It has a client build (CSS, fonts, assets) and an SSR build (`web/dist/server/entry-server.js`, exporting `render(url, data)`). Express calls `render` for every public route and passes in server data such as a deletion code's status. The future public website (shop pages, search) grows from this app.
-- **Admin UI:** React, Vite, Tailwind CSS v4, shadcn/ui, lucide-react icons. The design comes from the ui-ux-pro-max skill, starting from trust-me's design tokens (§9).
-- **Website UI:** React, Vite, Tailwind CSS v4, server-rendered by Express (§7.1). The design comes from the Taste skill, using the same design tokens as the admin app.
-- **Configuration (environment variables):** `MONGODB_URI`, `REDIS_URL`, `META_APP_ID`, `META_APP_SECRET`, `META_VERIFY_TOKEN`, `IG_ACCESS_TOKEN` (initial value), `IG_ACCOUNT_ID`, `GRAPH_API_VERSION`, `APIFY_TOKEN`, `APIFY_BUDGET_STOP_USD`, `DAILY_CHECK_CRON`, `SESSION_SECRET`, `DATA_ENCRYPTION_KEY` (**the same value as trust-me's**, §9.1), `TRUSTME_MONGODB_URI` (optional, read-only, only for `admin:import`), `PUBLIC_BASE_URL`, `CONTACT_EMAIL` (shown on the legal pages, §7), `TRUST_PROXY` (true behind one trusted reverse proxy, so the login lockout sees the real client IP), `ADMIN_PASSWORD` (only for `admin:create`).
+- **Admin UI:** React, Vite, Tailwind CSS v4, shadcn/ui, lucide-react icons. The design comes from the ui-ux-pro-max skill, starting from pagesanj's design tokens (§9).
+- **Website UI:** React, Vite, Tailwind CSS v4, server-rendered by Express (§7.1). The design comes from the Taste skill and is written down in `web/DESIGN.md`.
+- **Configuration (environment variables):** `MONGODB_URI`, `REDIS_URL`, `META_APP_ID`, `META_APP_SECRET`, `META_VERIFY_TOKEN`, `IG_ACCESS_TOKEN` (initial value), `IG_ACCOUNT_ID`, `GRAPH_API_VERSION`, `APIFY_TOKEN`, `APIFY_BUDGET_STOP_USD`, `DAILY_CHECK_CRON`, `SESSION_SECRET`, `DATA_ENCRYPTION_KEY` (**the same value as pagesanj's**, §9.1), `PAGESANJ_MONGODB_URI` (optional, read-only, only for `admin:import`), `PUBLIC_BASE_URL`, `CONTACT_EMAIL` (shown on the legal pages, §7), `TRUST_PROXY` (true behind one trusted reverse proxy, so the login lockout sees the real client IP), `ADMIN_PASSWORD` (only for `admin:create`).
 - **Hosting:** any Node host with HTTPS and a stable public URL, which Meta webhooks require. **Database:** MongoDB Atlas (free tier is enough for v1). **Redis:** a managed Redis (e.g. Upstash or Redis Cloud free tier), or Redis next to the app. Set `maxmemory-policy noeviction`, as BullMQ requires.
 - **Logging:** structured JSON logs with **pino** (`backend/src/lib/logger.ts`), `pino-http` for Express request logs, and `pino-pretty` in development only. Each worker uses a child logger carrying `{ queue, jobId }`. Never log tokens or full message bodies at info level: pino's `redact` option removes tokens, `signed_request`, `authorization` headers and message `text`. Message bodies are logged only at `debug`.
 
@@ -439,7 +439,7 @@ Login works exactly like trust-me's admin login: **username + password + a 6-dig
 - Keep secrets only in environment variables or encrypted in the database; nothing in the repo.
 - Store the minimum about people who DM us: IGSID and metadata, with a 90-day TTL. Honour deletion requests from Meta's callback.
 - The admin panel sits behind login with **two-step verification** (password + authenticator code, §9.1), with lockout after 5 failures, secure, httpOnly, sameSite session cookies and CSRF tokens.
-- `DATA_ENCRYPTION_KEY` is shared with trust-me (§9.1), so treat it as one secret for both apps: if either app leaks it, rotate it in both and re-encrypt the TOTP secrets and the Meta token.
+- `DATA_ENCRYPTION_KEY` is shared with pagesanj (§9.1), so treat it as one secret for both apps: if either app leaks it, rotate it in both and re-encrypt the TOTP secrets and the Meta token.
 - Store reviewer posts as **links** (permission `link_only` by default). Don't re-host their media publicly without permission.
 - Shop profile images are the shop's own public profile picture. We keep a copy only to show it (in the admin panel now, on the website later). Serve it with `X-Content-Type-Options: nosniff`, and accept only real image types checked from the bytes.
 - Shop contact details are only the ones the shop publishes on its own page (§5.6).
@@ -455,17 +455,17 @@ Login works exactly like trust-me's admin login: **username + password + a 6-dig
 ## 14. Milestones
 
 1. **M0, webhook spike (1–2 days):** Meta app in development mode, webhook verified, raw payloads logged for each share type (§5.3). Locks the parser down.
-2. **M1, core and data:** models (including categories and shop images), the admin app shell (design system from ui-ux-pro-max, Tailwind and shadcn/ui setup, sidebar), admin login with two-step verification and `admin:import` from trust-me (§9.1), shop and category CRUD in admin, the shop profile fetch (§5.6), handle normalisation, lookup function with unit tests.
+2. **M1, core and data:** models (including categories and shop images), the admin app shell (design system from ui-ux-pro-max, Tailwind and shadcn/ui setup, sidebar), admin login with two-step verification and `admin:import` from pagesanj (§9.1), shop and category CRUD in admin, the shop profile fetch (§5.6), handle normalisation, lookup function with unit tests.
 3. **M2, DM bot:** parse, resolve (including the Apify post-owner lookup with cache), reply in fa/en, wishlist, dedupe and rate limits.
 4. **M3, Apify daily check:** reviewer sources, backfill, daily cron, pending reviews, budget guard, job runs, admin approval screens.
 5. **M4, landing page and Meta compliance:** EN/FA pages designed with the Taste skill, every item of the §7.3 checklist, data-deletion and deauthorize callbacks, token refresh job.
 6. **M5, App Review:** business verification, screen recording, submission, fixes.
-7. **Later (not v1):** public website with shop pages (then add the shop link to DM replies), search, a one-time import of shops from trust-me (its CSV importer columns: `handle, display_name, website, categories`). Category names in the file are matched to `categories` by normalised name; an unknown name is reported, not created on the fly. Imported shops still need the profile fetch (§5.6).
+7. **Later (not v1):** public website with shop pages (then add the shop link to DM replies), search, a one-time import of shops from pagesanj (its CSV importer columns: `handle, display_name, website, categories`). Category names in the file are matched to `categories` by normalised name; an unknown name is reported, not created on the fly. Imported shops still need the profile fetch (§5.6).
 
 ## 15. Open questions
 
 1. **Tags:** are they just the status label plus free-form admin tags (current assumption), or a fixed list?
-2. **Seed data:** start with an empty shops collection, or import the shops already in trust-me?
+2. **Seed data:** start with an empty shops collection, or import the shops already in pagesanj?
 3. **Reviewer posts tagging several businesses:** one pending review per business (current assumption). Confirm.
 4. **Profile fetch cost:** Apify's actor page lists `apify~instagram-profile-scraper` at $2.60 per 1,000 profiles on the free plan (about $0.0026 each, plus the run start cost), so a profile fetch costs well under a cent. Not yet verified on the owner's account; check it with `npm run spike:apify-profile` and add it to the budget in §6.2.
 5. **Categories:** one level, or a parent/child tree (e.g. «پوشاک» › «کفش»)? Current assumption: one level.
@@ -477,7 +477,7 @@ Login works exactly like trust-me's admin login: **username + password + a 6-dig
 - TypeScript rather than plain JavaScript.
 - The landing and legal pages are a separate React app (`web/`, Vite SSR build) that the same Express app renders on the server, rather than templates in `src/views/`. The pages still work without client JavaScript, as Meta's reviewers require.
 - The admin panel is a Vite + React app (Tailwind, shadcn/ui, designed with the ui-ux-pro-max skill), served by the same Express app with a JSON API, rather than a Next.js app.
-- Admin accounts reuse trust-me's: same `DATA_ENCRYPTION_KEY`, same password hash and TOTP formats, copied with `admin:import`, so one authenticator entry works for both panels.
+- Admin accounts reuse pagesanj's: same `DATA_ENCRYPTION_KEY`, same password hash and TOTP formats, copied with `admin:import`, so one authenticator entry works for both panels.
 - Unknown tagged businesses from reviewer posts go to the wishlist (with the pending review attached) instead of creating a shop.
 - Backfill cap of 50 posts per new source; daily check at 09:00 Tehran time; budget stop at $4.50.
 - Post-to-author lookup via Apify, with a permanent cache.
@@ -497,5 +497,5 @@ Login works exactly like trust-me's admin login: **username + password + a 6-dig
 - A reviewer source's handle can't be edited after it's added, because posts are matched to sources by handle.
 - Security headers on every response (nosniff, frame denial, referrer policy, HSTS in production), and a strict same-origin Content-Security-Policy on the website and admin app. Nothing blocks crawlers. Secret query values (`hub.verify_token`, tokens, `signed_request`) are masked in request logs.
 - The website gets `contactEmail` (from `CONTACT_EMAIL`) with every page's server data, for the legal pages.
-- The website also gets `instagramHandle` (`SITE_INSTAGRAM_HANDLE`, default `trustme`) and `companyName` (`COMPANY_NAME`, default the brand name) when set. The site brand is trust-me's: «اعتماد» in Persian, "Trust Me" in English.
+- The website also gets `instagramHandle` (`SITE_INSTAGRAM_HANDLE`, default `pagesanj`) and `companyName` (`COMPANY_NAME`, default the brand name) when set. The site brand is «پیج‌سنج» in Persian and "Pagesanj" in English.
 - Website legal copy commits to: DM requests and email deletion requests completed within 30 days; deletion via Instagram's *Apps and websites* runs as soon as the callback arrives; processing-queue messages removed within 7 days (§15 item 7). The site sets no cookies and loads no analytics.

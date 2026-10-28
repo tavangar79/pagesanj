@@ -10,6 +10,8 @@
     "build:server": "vite build --ssr src/entry-server.tsx --outDir dist/server"
   },
   "dependencies": {
+    "@fontsource-variable/geist": "^5.3.0",
+    "@fontsource-variable/geist-mono": "^5.3.0",
     "@fontsource-variable/vazirmatn": "^5.3.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"

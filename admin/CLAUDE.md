@@ -7,7 +7,7 @@ Admin panel, served by the backend at `/admin`; JSON API at `/admin/api/*`. See 
 ## Rules
 
 - Vite + React 19 + TypeScript, Tailwind v4, shadcn/ui components in `src/components/ui` (add them with the shadcn CLI, then theme through tokens only).
-- Tokens live in `src/index.css` (values from `../design-system/trust-me/MASTER.md`). Use `bg-surface`, `text-ink`, etc.; never raw palette colours.
+- Tokens live in `src/index.css` (values from `../design-system/pagesanj/MASTER.md`). Use `bg-surface`, `text-ink`, etc.; never raw palette colours.
 - Persian first: `dir="rtl"`, Persian labels; handles, URLs, emails and phones `dir="ltr"`. Use logical properties (`ms-`, `me-`, `border-e`), not `left`/`right`.
 - All API calls go through `src/lib/api.ts` (sends the CSRF token on writes).
 - Every list has empty, loading and error states; every action button shows a pending state; destructive actions confirm.

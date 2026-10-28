@@ -1,4 +1,4 @@
-# Trust Me («اعتماد») — Design System (Master)
+# Pagesanj («پیج‌سنج») — Design System (Master)
 
 Source of truth for the public site and the admin panel. Generated with ui-ux-pro-max
 (pattern "Trust & Authority", style "Minimalism & Swiss", variance 4 / motion 3 / density 5),
@@ -12,7 +12,7 @@ neutral surfaces instead of a tinted sky background so status colors stay unambi
 - One brand color (trust blue). Everything else is neutral ink on neutral surfaces.
 - RTL first: use logical utilities (`ms-*`, `me-*`, `ps-*`, `pe-*`, `start-*`, `end-*`,
   `text-start`, `border-s`, `border-e`). Handles, URLs, domains and codes get `dir="ltr"`.
-- Light and dark mode come from tokens in `src/app/globals.css`. **Never** use raw palette
+- Light and dark mode come from tokens in `admin/src/index.css` (values below; the bot's admin panel). **Never** use raw palette
   classes (`zinc-*`, `emerald-*`, `red-*`, `white`, ...) or `dark:` variants in components.
 
 ## Tokens (Tailwind classes)
@@ -74,15 +74,16 @@ list rows       divide-y divide-line; row hover:bg-subtle
 eyebrow         text-xs font-semibold tracking-wide text-brand
 ```
 
-Admin class constants live in `src/app/admin/(panel)/_components/labels.ts`
-(`inputClass`, `buttonClass`, `secondaryButtonClass`, `smallButtonClass`, `dangerButtonClass`,
-`cardClass`, `labelClass`, `pageTitleClass`). Reuse them; do not re-type the strings.
+In this repo the recipes are built into the shadcn primitives (`admin/src/components/ui`: `Button`
+variants, `Badge` tones `danger|warn|caution|success|neutral`) and the shared pieces in
+`admin/src/components/common.tsx` (`PageHeader`, `Panel`, `Field`, `Alert`, list states, `Handle`).
+Reuse them; do not re-type the strings.
 
 ## shadcn/ui
 
 Primitives live in `src/components/ui` (new-york style, Radix, `components.json`), with `cn()` in
 `src/lib/utils.ts`. Their theme variables (`--primary`, `--background`, `--border`, ...) are
-aliased to the tokens above in `globals.css`, so they need no `dark:` handling of their own.
+aliased to the tokens above in `index.css`, so they need no `dark:` handling of their own.
 Button/Input/Card/Textarea were tuned to this system (h-10 controls, `rounded-xl`,
 `rounded-2xl` cards, soft brand focus ring). Prefer `<Button>` (or `buttonVariants()` on a
 `<Link>` / `asChild`), `<Input>`, `<Label>`, `<Card>` for new UI; the admin `buttonClass` family is

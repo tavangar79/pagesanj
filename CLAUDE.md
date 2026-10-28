@@ -12,7 +12,7 @@ npm workspaces, three folders:
 | `admin/` | Admin panel at `/admin` (built files served by backend) | Vite, React 19, Tailwind v4, shadcn/ui, react-router |
 | `web/` | Public website, server-rendered by backend | Vite (client + SSR build), React 19, Tailwind v4 |
 
-`design-system/trust-me/MASTER.md` holds the shared design tokens (copied from trust-me). `admin/` and `web/` both take token values from it.
+`design-system/pagesanj/MASTER.md` holds the admin design tokens. The public website has its own design system in `web/DESIGN.md` (Taste skill).
 
 Each folder has its own `CLAUDE.md` with folder-specific rules.
 

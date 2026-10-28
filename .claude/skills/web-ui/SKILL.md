@@ -9,7 +9,7 @@ description: Use when designing, building or reviewing any page or component in 
 
 1. **Read the spec.** PRD §7 (design rules, pages, Meta checklist §7.3). For legal pages, list every item the checklist requires the page to say.
 2. **Run the `stitch-utilities:taste-design` skill** (Skill tool) for the look, layout, typography and copy rhythm, so the site reads as a real, trustworthy product and not a template. Give it these constraints:
-   - Keep trust-me's brand: tokens from `design-system/trust-me/MASTER.md`, Vazirmatn, light and dark.
+   - Follow `web/DESIGN.md` (written with Taste and approved by the owner): its tokens, Geist + Vazirmatn, light and dark. Update DESIGN.md first when the design changes.
    - Persian (RTL) and English versions of every page, mobile-first.
    - Taste may shape legal pages (typography, spacing, header, footer) but **must not hide, collapse, shorten or move legal text behind interactions**.
 3. **Build** pages in `web/src/pages/`, shared pieces in `web/src/components/`, all copy in `web/src/i18n/fa.ts` and `en.ts` (never hard-coded in components).

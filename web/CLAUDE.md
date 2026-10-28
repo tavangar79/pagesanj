@@ -17,7 +17,7 @@ Public website (landing + legal pages), server-rendered by the backend. See the 
 - English pages are complete, not summaries; Persian pages carry the same content.
 - Language switcher and footer legal links on every page. Forms are plain HTML (`method="get"`).
 - `dir="rtl"` for Persian, mobile-first, contrast ≥ 4.5:1, animations respect `prefers-reduced-motion`.
-- Tokens only (`bg-surface`, `text-ink`, ...), shared with admin; Vazirmatn font.
+- Design comes from `DESIGN.md` (Taste skill): tokens only (`bg-paper`, `text-ink`, `text-accent`, ...), Geist + Geist Mono for Latin, Vazirmatn for Persian. Change the design there first, then `src/index.css`.
 
 ## Commands
 

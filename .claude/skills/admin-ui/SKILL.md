@@ -10,7 +10,7 @@ description: Use when designing, building or reviewing any screen, component or 
 1. **Read the spec.** PRD §9 (layout, accessibility, login) and the §9.2 entry for the screen. Check the data fields in PRD §8.
 2. **Run the `ui-ux-pro-max:ui-ux-pro-max` skill** (Skill tool) to plan the screen: layout, states, components, interaction. Give it these constraints:
    - Internal admin tool, Persian (RTL) first, data-dense tables for lists and cards for details.
-   - Start from trust-me's design system: `design-system/trust-me/MASTER.md` (semantic tokens, Vazirmatn, light and dark). Do not invent a new palette.
+   - Start from pagesanj's design system: `design-system/pagesanj/MASTER.md` (semantic tokens, Vazirmatn, light and dark). Do not invent a new palette.
    - Components come from shadcn/ui (Radix), themed only through tokens.
 3. **Build** in `admin/src/pages/<Screen>.tsx`, shared pieces in `admin/src/components/`. Add shadcn components with `npx shadcn@latest add <name>` inside `admin/`.
 4. **Check the screen against ui-ux-pro-max's review guidance** and this list before calling it done:

@@ -2,9 +2,10 @@ import type { Strings } from '../i18n';
 import type { Locale } from '../routes';
 import { LegalPage } from '../components/LegalPage';
 import { StatusForm } from '../components/StatusForm';
+import { CheckCircle, ChevronBack, Clock, SearchX } from '../components/Icons';
 
 // Status for a confirmation code; this is the url returned to Meta's callback (PRD §7.2).
-// The status is text in a pill, never colour alone (MASTER.md).
+// The status is text in a pill, never colour alone (DESIGN.md §5).
 export function DeletionStatus({
   t,
   locale,
@@ -20,31 +21,35 @@ export function DeletionStatus({
   const view = !code
     ? null
     : status === 'done'
-      ? { pill: 'pill-success', label: d.statusDone, message: d.done }
+      ? { pill: 'pill-done', tile: 'bg-mist text-accent', Icon: CheckCircle, label: d.statusDone, message: d.done }
       : status === 'pending'
-        ? { pill: 'pill-caution', label: d.statusPending, message: d.pending }
-        : { pill: 'pill-neutral', label: d.statusUnknown, message: d.unknown };
+        ? { pill: 'pill-pending', tile: 'bg-caution-soft text-caution', Icon: Clock, label: d.statusPending, message: d.pending }
+        : { pill: 'pill-unknown', tile: 'bg-wash text-graphite', Icon: SearchX, label: d.statusUnknown, message: d.unknown };
 
   return (
     <LegalPage title={t.titles.deletionStatus} t={t}>
       {view ? (
-        <div className="flex flex-col gap-4 rounded-2xl border border-line bg-surface p-5 shadow-card sm:p-6" role="status">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-ink-3">
+        <div className="sheet settle flex flex-col gap-6 p-6 sm:flex-row sm:items-start sm:p-10" role="status">
+          <span className={`flex size-16 shrink-0 items-center justify-center rounded-full ${view.tile}`}>
+            <view.Icon className="size-8" />
+          </span>
+          <div className="flex flex-col gap-4">
+            <span className={`pill ${view.pill} self-start`}>{view.label}</span>
+            <p className="text-2xl font-bold leading-snug text-ink">{view.message}</p>
+            <p className="t-label">
               {d.checkLabel}:{' '}
-              <code dir="ltr" className="font-mono text-ink">
+              <code dir="ltr" className="text-ink">
                 {code}
               </code>
             </p>
-            <span className={view.pill}>{view.label}</span>
           </div>
-          <p className="text-lg leading-8 text-ink">{view.message}</p>
         </div>
       ) : (
-        <p className="leading-8 text-ink-2">{d.missing}</p>
+        <p className="t-lede">{d.missing}</p>
       )}
       <StatusForm t={t} locale={locale} code={code} />
-      <a href={`/${locale}/data-deletion`} className="link self-start">
+      <a href={`/${locale}/data-deletion`} className="link inline-flex items-center gap-1.5 self-start">
+        <ChevronBack className="size-4 rtl:-scale-x-100" />
         {d.back}
       </a>
     </LegalPage>
