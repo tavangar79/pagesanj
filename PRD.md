@@ -117,7 +117,7 @@ The full public website (shop pages, search) is **out of scope**. It comes a few
 Every shop has a profile image, and has the contact details its own Instagram page shows.
 
 - **When:** when a shop is created (by an admin, or by promoting a wishlist entry), and when an admin presses **refresh profile**. Not on every DM and not daily.
-- **How:** one BoxAPI Data API `user/get_info_by_username` call for the shop's handle. **Verify the field names against a real response before building**, as in §6.2. The fields we expect to use are `profile_pic_url_hd`, `external_url` / `bio_links`, `business_email` and `business_phone_number`.
+- **How:** one BoxAPI Data API `user/get_info_by_username` call for the shop's handle. Fields (checked against a real response): `body.user` with `hd_profile_pic_url_info.url` (else `profile_pic_url`), `external_url` / `bio_links[].url`, `public_email` and `contact_phone_number` (else `public_phone_country_code` + `public_phone_number`).
 - **Image:** download it straight away (the Instagram link expires), check that it's a real JPEG, PNG or WebP of at most 2 MB, and store it in `shopImages`. If the fetch fails, the admin must upload an image before the shop can be saved.
 - **Contact details:** copy only what the page itself publishes. Normalise the email (lowercase), the website (full `https://` URL) and the phone (international form). The admin can correct or clear a field, and can add one the page shows but the scrape missed (e.g. a number written in the bio). Nothing is taken from other sources, such as reviewer posts or DMs.
 - **Refresh:** a refresh replaces the image (if it changed) and the contact fields, and sets `profileFetchedAt`. A field the page no longer shows is cleared.
@@ -128,8 +128,8 @@ Every shop has a profile image, and has the contact details its own Instagram pa
 ### 6.1 Flow
 
 1. An admin adds a **reviewer source** (`handle`, `name`, `follow: true`).
-2. **First run for a new source (backfill):** fetch up to `backfillLimit` recent posts (default **50**, set per source), then mark `backfillDone`.
-3. **Daily:** a BullMQ scheduled job on the `apify-daily` queue, by default **09:00 Asia/Tehran**, fetches the newest page (12 posts) of each followed source, paging with `max_id` only while every post on the page is new. There's no "only newer than" filter, so **deduplicate by shortcode** on our side.
+2. **First run for a new source (backfill):** fetch up to `backfillLimit` recent posts (default **50**, set per source; one Data API call per 12 posts), then mark `backfillDone`.
+3. **Daily:** a BullMQ scheduled job on the `reviewer-daily` queue, by default **09:00 Asia/Tehran**, fetches the newest page (12 posts) of each followed source, paging with `max_id` (at most 3 pages) only while every non-pinned post on the page is newer than `lastSeenPostAt`. One call per source; a failing source (e.g. a renamed page) is counted in `sourceErrors` and doesn't stop the others. There's no "only newer than" filter, so **deduplicate by shortcode** on our side.
 4. For each post we haven't stored yet:
    - Find the **tagged businesses**: the union of caption `mentions` and `taggedUsers`, minus the reviewer's own handle, minus a configurable ignore list (e.g. sponsors that aren't shops).
    - **No tagged business:** store it as `skipped` (for audit), and don't create a review.
@@ -140,7 +140,7 @@ Every shop has a profile image, and has the contact details its own Instagram pa
 ### 6.2 BoxAPI Data API details
 
 - **Endpoint:** `POST https://instagram.boxpi.ir/api/instagram/user/get_media_by_username` (host for servers outside Iran) with `Authorization: Bearer <BOXAPI_INSTAGRAM_TOKEN>` and body `{"username": "sadegh.delicious", "count": 12, "max_id"?: "<next_max_id>"}`. One call per source; at most 12 posts per call.
-- **Response:** wrapped as `{ status, response: { status_code, body } }`. **Fields used** (from `body.items[]`, to verify against a real response before building): `code` (shortcode), `taken_at`, `caption.text`, `usertags.in[].user.username` (also on carousel children), `user.username`, `image_versions2`, video URLs, `is_paid_partnership`, and a pinned flag. Also store the **full raw item**.
+- **Response:** wrapped as `{ status, response: { status_code, body } }`. **Fields used** (from `body.items[]`, checked against a real response): `code` (shortcode), `taken_at` (unix seconds), `caption.text` (caption `@mentions` are parsed from it), `usertags.in[].user.username` (also on `carousel_media[]`), `user.username` / `user.pk`, `image_versions2.candidates[0].url`, `video_versions[0].url`, `is_paid_partnership`, and `timeline_pinned_user_ids` (pinned when it holds the author's `pk`). Paging: `next_max_id`, `more_available`. Also store the **full raw item**.
 - The token goes in `BOXAPI_INSTAGRAM_TOKEN` in `backend/.env`, never in the repo. Full endpoint notes: the `boxapi` skill (`.claude/skills/boxapi/SKILL.md`).
 
 ### 6.3 Pending review creation
@@ -236,9 +236,9 @@ A category in use by any shop can't be deleted; the admin must move those shops 
 
 | Field | Type | Description |
 |---|---|---|
-| `handle` | string, unique | The reviewer page's Instagram handle, sent to Apify. |
+| `handle` | string, unique | The reviewer page's Instagram handle, sent to the Data API. |
 | `name` | string | Display name of the reviewer. |
-| `follow` | boolean | When true, the page is included in the daily Apify check. |
+| `follow` | boolean | When true, the page is included in the daily check. |
 | `backfillLimit` | number, default 50 | Maximum number of past posts to fetch the first time the page is followed. |
 | `backfillDone` | boolean | Whether the first-time history fetch has finished. |
 | `lastSeenShortcode?` | string | Shortcode of the newest (non-pinned) post we stored; the daily check's starting point. |
@@ -257,9 +257,9 @@ A category in use by any shop can't be deleted; the admin must move those shops 
 | `postUrl` | string | Canonical post link (`https://www.instagram.com/p/<code>/`), shown in replies. |
 | `occurredAt` | date | When the reviewer published the post. |
 | `caption` | string | The post's caption text, for the admin to read when moderating. |
-| `media` | `{ displayUrl?, videoUrl? }` | Thumbnail and video links from Apify, for the admin panel only. Instagram links expire, so they aren't permanent. |
+| `media` | `{ displayUrl?, videoUrl? }` | Thumbnail and video links from the Data API, for the admin panel only. Instagram links expire, so they aren't permanent. |
 | `paidPartnership` | boolean | Instagram's "paid partnership" flag; shown to the admin as a warning that the post is sponsored. |
-| `raw` | object | The full Apify item, kept so we can re-parse later without paying again. |
+| `raw` | object | The full Data API item, kept so we can re-parse later without fetching it again. |
 | `status` | enum: `pending \| published \| rejected` | Moderation state. Only `published` reviews appear in DM replies. |
 | `outcome?` | enum (pagesanj's `OUTCOMES`) | What happened to the buyer, e.g. `delivered_ok` or `not_delivered`. Set by the admin; required to publish. |
 | `direction?` | enum: `positive \| negative \| mixed` | Overall tone of the review. Set by the admin; required to publish. |
@@ -284,7 +284,7 @@ A category in use by any shop can't be deleted; the admin must move those shops 
 | Field | Type | Description |
 |---|---|---|
 | `shortcode` | string, unique | Instagram post code. |
-| `ownerUsername` | string | Handle of the account that posted it, found via Apify. |
+| `ownerUsername` | string | Handle of the account that posted it, found via the Data API. |
 | `fetchedAt` | date | When we looked it up. The entry is kept forever, so the same post never costs twice. |
 
 ### `dmEvents`: log of each incoming DM and how the bot handled it (deleted after 90 days)
@@ -301,16 +301,14 @@ A category in use by any shop can't be deleted; the admin must move those shops 
 | `error?` | string | Last error, if processing failed after all retries. |
 | `text?` | string | The incoming message text. Only stored when debugging is turned on. |
 
-### `jobRuns`: history of background jobs (for the admin Jobs screen and cost tracking)
+### `jobRuns`: history of background jobs (for the admin Jobs screen)
 
 | Field | Type | Description |
 |---|---|---|
 | `type` | enum: `daily_check \| backfill \| post_owner_lookup \| profile_fetch \| token_refresh` | Which job ran. `profile_fetch` is the shop profile run (§5.6). `token_refresh` only appears on old records. |
 | `startedAt` | date | Start time. |
 | `finishedAt?` | date | End time; empty while running or if it crashed. |
-| `apifyRunId?` | string | Apify's run ID, to open the run in Apify's console. |
-| `costUsd?` | number | What the Apify run cost, used for the budget guard and reporting. |
-| `counts` | object | Numbers for the run, e.g. `{ postsFetched, reviewsCreated, wishlisted, skipped }`. |
+| `counts` | object | Numbers for the run, e.g. `{ postsFetched, postsNew, reviewsCreated, wishlisted, skipped, sourceErrors }`. |
 | `error?` | string | Error message if the job failed. |
 
 ### `deletionRequests`: data deletion requests from Meta's callback (§7)
@@ -372,18 +370,18 @@ Login works exactly like pagesanj's admin login: **username + password + a 6-dig
 3. **Shops:** create and edit (handle, previous handles, name, status, tags, categories, profile image, contact details). Categories are chosen from the list (screen 4), not typed. A new shop (including one promoted from the wishlist) starts with the profile fetch (§5.6), and the admin checks the result before saving: the image is required, and contact details stay empty unless the shop's page shows them. Actions: **upload a profile image** (replaces the fetched one), **refresh profile from Instagram**, and edit or clear each contact field.
 4. **Categories:** add, rename and delete categories (deleting only when no shop uses one), with the number of shops in each.
 5. **Reviewer sources:** add or edit, toggle follow, set the backfill limit, "run backfill now."
-6. **Jobs:** recent `jobRuns`, current Apify usage this month, "run daily check now."
+6. **Jobs:** recent `jobRuns`, the Data API request quota (`GET /api/my`: used, limit, left, plan end), "run daily check now."
 
 ## 10. Instagram setup (BoxAPI)
 
 We have **no Meta app of our own**: no App Review, no Graph API token and no token refresh. BoxAPI's official, Meta-approved DM & Comment API does that part. Endpoint details are in the `boxapi` skill.
 
-1. Connect pagesanj's **Instagram Business (or Creator) account** to BoxAPI through BoxAPI's official Instagram login link (`instagram_oauth_url` from `GET https://boxapi.ir/service/info`).
+1. Connect pagesanj's **Instagram Business (or Creator) account** to BoxAPI through BoxAPI's official Instagram login link (`instagram_oauth_url` from `GET https://api.sendbox.chat/api/v1/service/info`).
 2. In the BoxAPI panel (*API settings*): set the webhook URL to `https://<PUBLIC_BASE_URL>/webhooks/boxapi`, and generate the **webhook secret** (`BOXAPI_WEBHOOK_SECRET`). The route rejects every request until the secret is set.
 3. **Tokens** in `backend/.env`: `BOXAPI_INSTAGRAM_DM_TOKEN` (DM & Comment API, header `X-Api-Key`), `BOXAPI_INSTAGRAM_TOKEN` (Instagram Data API, Bearer), `BOXAPI_AI_TOKEN` (AI API, Bearer, e.g. the `typesafe/jev-*` models).
-4. **Send API:** `POST https://boxapi.ir/service/actions/send_message` with `{ account_id, recipient_id, message }`. `account_id` is the connected page's UUID, and `recipient_id` is the webhook's `sender.id`.
+4. **Send API:** `POST https://api.sendbox.chat/api/v1/service/actions/send_message` (SendBox, BoxAPI's DM service outside Iran; `BOXAPI_DM_BASE_URL`) with `{ account_id, recipient_id, message }`. `account_id` is the connected page's UUID, and `recipient_id` is the webhook's `sender.id`.
 5. **BoxAPI rules:** message only people who messaged or commented first. No bulk or unsolicited messages (BoxAPI closes accounts for spam).
-6. **Hosting:** the backend runs **outside Iran**, so the Data API uses `https://instagram.boxpi.ir` and the AI API uses `https://ai.boxpi.ir`.
+6. **Hosting:** the backend runs **outside Iran**, so the DM API uses `https://api.sendbox.chat/api/v1`, the Data API uses `https://instagram.boxpi.ir` and the AI API uses `https://ai.boxpi.ir`. Some Data API tokens are only accepted on `https://boxapi.ir`; set `BOXAPI_INSTAGRAM_BASE_URL` for that.
 7. **Fallback:** keep the lookup logic in a function that doesn't depend on the transport.
 
 ## 11. Tech stack and architecture
@@ -392,22 +390,22 @@ We have **no Meta app of our own**: no App Review, no Graph API token and no tok
 - **Language:** *builder's call:* TypeScript, run with `tsx` in development and compiled with `tsc` for production. This matches pagesanj and makes the later website share types.
 - **Validation:** zod (as in pagesanj). **Tests:** vitest with mongodb-memory-server (as in pagesanj).
 - **Queue:** **BullMQ** on **Redis**.
-  - Queues: `dm-inbound`, `post-owner`, `dm-send`, `apify-daily`, `apify-backfill`, `apify-profile` (shop profile fetch, §5.6).
+  - Queues: `dm-inbound`, `post-owner`, `dm-send`, `reviewer-daily`, `reviewer-backfill`, `shop-profile` (shop profile fetch, §5.6).
   - Workers run in a separate process (`npm run worker`) from the Express web process, so the webhook stays fast.
-- **Scheduler:** BullMQ **job schedulers** (repeatable jobs), with the timezone set to `Asia/Tehran`, for the daily Apify check (§6.1). Each job runs once even with several workers, so no separate lock is needed.
+- **Scheduler:** BullMQ **job schedulers** (repeatable jobs), with the timezone set to `Asia/Tehran`, for the daily reviewer check (§6.1). Each job runs once even with several workers, so no separate lock is needed.
 - **Monitoring:** Bull Board mounted at `/admin/queues`, behind the admin login.
 - **Structure:** an npm workspaces repo with three folders: `backend/` (Express web process and workers), `admin/` and `web/`.
   - `backend/src/queues/`: queue definitions and workers.
   - `backend/src/routes/`: webhooks, landing, admin.
   - `backend/src/bot/`: parse, resolve, lookup, reply. The core is **pure and transport-agnostic**.
-  - `backend/src/apify/`: client, daily check, backfill, post owner.
-  - `backend/src/boxapi/`: BoxAPI webhook signature and DM send (`send_message`).
+  - `backend/src/boxapi/`: BoxAPI webhook signature, DM send (`send_message`), and the Data API client with its post and profile mappers.
+  - `backend/src/services/`: domain logic, including the reviewer-post backfill and daily check (`reviewerPosts.ts`) and the post-owner lookup (`postOwners.ts`).
   - `backend/src/models/`, `backend/src/jobs/`, `backend/src/i18n/` (fa, en strings for bot replies).
   - `admin/`: the admin React app (Vite, Tailwind, shadcn/ui under `admin/src/components/ui`). Its build output is served by Express.
   - `web/`: the public website React app (Vite, Tailwind), with the landing and legal pages (§7) and its own fa/en strings in `web/src/i18n/`. It has a client build (CSS, fonts, assets) and an SSR build (`web/dist/server/entry-server.js`, exporting `render(url, data)`). Express calls `render` for every public route and passes in server data such as a deletion code's status. The future public website (shop pages, search) grows from this app.
 - **Admin UI:** React, Vite, Tailwind CSS v4, shadcn/ui, lucide-react icons. The design comes from the ui-ux-pro-max skill, starting from pagesanj's design tokens (§9).
 - **Website UI:** React, Vite, Tailwind CSS v4, server-rendered by Express (§7.1). The design comes from the Taste skill and is written down in `web/DESIGN.md`.
-- **Configuration (environment variables):** `MONGODB_URI`, `REDIS_URL`, `BOXAPI_INSTAGRAM_DM_TOKEN`, `BOXAPI_INSTAGRAM_TOKEN`, `BOXAPI_AI_TOKEN`, `BOXAPI_WEBHOOK_SECRET`, `APIFY_TOKEN`, `APIFY_BUDGET_STOP_USD`, `DAILY_CHECK_CRON`, `SESSION_SECRET`, `DATA_ENCRYPTION_KEY` (**the same value as pagesanj's**, §9.1), `PAGESANJ_MONGODB_URI` (optional, read-only, only for `admin:import`), `PUBLIC_BASE_URL`, `CONTACT_EMAIL` (shown on the legal pages, §7), `TRUST_PROXY` (true behind one trusted reverse proxy, so the login lockout sees the real client IP), `ADMIN_PASSWORD` (only for `admin:create`).
+- **Configuration (environment variables):** `MONGODB_URI`, `REDIS_URL`, `BOXAPI_INSTAGRAM_DM_TOKEN`, `BOXAPI_INSTAGRAM_TOKEN`, `BOXAPI_AI_TOKEN`, `BOXAPI_WEBHOOK_SECRET`, `BOXAPI_DM_BASE_URL` and `BOXAPI_INSTAGRAM_BASE_URL` (optional), `REVIEW_IGNORE_HANDLES`, `DAILY_CHECK_CRON`, `SESSION_SECRET`, `DATA_ENCRYPTION_KEY` (**the same value as pagesanj's**, §9.1), `PAGESANJ_MONGODB_URI` (optional, read-only, only for `admin:import`), `PUBLIC_BASE_URL`, `CONTACT_EMAIL` (shown on the legal pages, §7), `TRUST_PROXY` (true behind one trusted reverse proxy, so the login lockout sees the real client IP), `ADMIN_PASSWORD` (only for `admin:create`).
 - **Hosting:** any Node host with HTTPS and a stable public URL, which the BoxAPI webhook requires. **Database:** MongoDB Atlas (free tier is enough for v1). **Redis:** a managed Redis (e.g. Upstash or Redis Cloud free tier), or Redis next to the app. Set `maxmemory-policy noeviction`, as BullMQ requires.
 - **Logging:** structured JSON logs with **pino** (`backend/src/lib/logger.ts`), `pino-http` for Express request logs, and `pino-pretty` in development only. Each worker uses a child logger carrying `{ queue, jobId }`. Never log tokens or full message bodies at info level: pino's `redact` option removes tokens, `signed_request`, `authorization` headers and message `text`. Message bodies are logged only at `debug`.
 
@@ -432,10 +430,10 @@ We have **no Meta app of our own**: no App Review, no Graph API token and no tok
 
 1. **M0, webhook spike (1–2 days):** page connected to BoxAPI, `/webhooks/boxapi` receiving signed events, raw payloads logged for each share type (§5.3). Locks the parser down.
 2. **M1, core and data:** models (including categories and shop images), the admin app shell (design system from ui-ux-pro-max, Tailwind and shadcn/ui setup, sidebar), admin login with two-step verification and `admin:import` from pagesanj (§9.1), shop and category CRUD in admin, the shop profile fetch (§5.6), handle normalisation, lookup function with unit tests.
-3. **M2, DM bot:** parse, resolve (including the Apify post-owner lookup with cache), reply in fa/en, wishlist, dedupe and rate limits.
-4. **M3, Apify daily check:** reviewer sources, backfill, daily cron, pending reviews, budget guard, job runs, admin approval screens.
+3. **M2, DM bot:** parse, resolve (including the post-owner lookup with cache), reply in fa/en, wishlist, dedupe and rate limits.
+4. **M3, daily reviewer check:** reviewer sources, backfill, daily cron, pending reviews, job runs, admin approval screens.
 5. **M4, landing page and Meta compliance:** EN/FA pages designed with the Taste skill, every item of the §7.3 checklist, data-deletion and deauthorize callbacks, token refresh job.
-6. **M5, BoxAPI migration:** replace the Graph API send, Meta webhook, token refresh and Apify code with BoxAPI (§10, §5.3, §5.6, §6.2); remove the Meta-only config and Apify cost tracking.
+6. **M5, BoxAPI migration:** replace the Graph API send, Meta webhook, token refresh and the old scraper code with BoxAPI (§10, §5.3, §5.6, §6.2); remove the Meta-only config and cost tracking. **Done 2026-10-29.**
 7. **Later (not v1):** public website with shop pages (then add the shop link to DM replies), search, a one-time import of shops from pagesanj (its CSV importer columns: `handle, display_name, website, categories`). Category names in the file are matched to `categories` by normalised name; an unknown name is reported, not created on the fly. Imported shops still need the profile fetch (§5.6).
 
 ## 15. Open questions
@@ -457,11 +455,11 @@ We have **no Meta app of our own**: no App Review, no Graph API token and no tok
 - Unknown tagged businesses from reviewer posts go to the wishlist (with the pending review attached) instead of creating a shop.
 - Backfill cap of 50 posts per new source; daily check at 09:00 Tehran time.
 - Post-to-author lookup via BoxAPI's Data API, with a permanent cache.
-- **2026-10-28: BoxAPI replaces Meta's Graph API and Apify.** DMs come in on `POST /webhooks/boxapi` and go out through BoxAPI's `send_message`. Reviewer posts, post owners and shop profiles come from BoxAPI's Instagram Data API. AI calls (Jev models) go to BoxAPI's AI API. Our own Meta app, App Review, token refresh and all cost and budget tracking are dropped. **2026-10-29:** the Meta part is done. DM replies go through `send_message` (with the webhook's `account_id`), and the Meta webhook, `/meta/*` callbacks, token refresh, `metaToken` and the Meta env vars are gone. The Apify code (`src/apify/`, `jobRuns.costUsd`) is still in place until the rest of M5 lands.
+- **2026-10-28: BoxAPI replaces Meta's Graph API and Apify.** DMs come in on `POST /webhooks/boxapi` and go out through BoxAPI's `send_message`. Reviewer posts, post owners and shop profiles come from BoxAPI's Instagram Data API. AI calls (Jev models) go to BoxAPI's AI API. Our own Meta app, App Review, token refresh and all cost and budget tracking are dropped. **2026-10-29:** the Meta part is done. DM replies go through `send_message` (with the webhook's `account_id`), and the Meta webhook, `/meta/*` callbacks, token refresh, `metaToken` and the Meta env vars are gone. Later the same day the rest of M5 landed: reviewer posts, post owners and shop profiles use the Data API (`src/boxapi/data.ts`), the queues are `reviewer-daily`, `reviewer-backfill` and `shop-profile`, and `src/apify/`, the budget guard, `jobRuns.costUsd` / `apifyRunId` and the `APIFY_*` env vars are gone. Field names were checked against real responses (`backend/tests/fixtures/boxapi/`).
 - Persian replies by default. English when the message's own words (ignoring URLs and @handles) have at least 3 Latin letters and more Latin than Persian/Arabic letters.
 - A 90-day retention period for DM logs.
 - Shop profiles (image and contact details) are fetched on create and on demand, not daily.
-- The profile fetch runs in the worker (`apify-profile` queue); the admin API answers with a job id and the admin app polls for the result, instead of holding the request open while Apify runs. Profile fetches, like daily checks, are allowed until Apify's hard limit, not stopped at `APIFY_BUDGET_STOP_USD`.
+- The profile fetch runs in the worker (`shop-profile` queue); the admin API answers with a job id and the admin app polls for the result, instead of holding the request open while the Data API answers.
 - Profile images are stored in MongoDB (`shopImages`), up to 2 MB each.
 - Shop and category slugs are made once (shop: from the handle; category: from the English name, else the Persian name, Persian letters kept) and never change on a rename, so website URLs stay stable.
 - A shop website given as `http://` or without a scheme is stored as `https://`. Renaming a shop's handle moves the old handle to `previousHandles` automatically; one handle can't belong to two shops.
