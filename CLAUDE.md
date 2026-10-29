@@ -30,7 +30,7 @@ This root repo uses one branch, `master`. Each folder is a **git submodule** wit
 
 - **Never publish without an admin's approval**, never log into Instagram with a password, and always reply about the post's *author*, not tagged accounts (PRD §3, §5.2).
 - **Instagram and AI go through BoxAPI only** (boxapi.ir, PRD §10; use the `boxapi` skill). That means the DM & Comment API for receiving DMs (`POST /webhooks/boxapi`) and sending replies, the Instagram Data API for posts, post owners and profiles, and the AI API for the Jev models. We have no Meta app, App Review, Graph token or token refresh. Apify and cost/budget tracking are gone. Don't add them back. The backend is hosted outside Iran, so use BoxAPI's non-Iran hosts.
-- **Secrets** live in `backend/.env` (template: `backend/.env.example`) or encrypted in MongoDB. Never commit them or log them. BoxAPI uses `BoxApiInstagramDMToken`, `BoxApiInstagramToken`, `BoxApiAIToken` and `BoxApiWebhookSecret`.
+- **Secrets** live in `backend/.env` (template: `backend/.env.example`) or encrypted in MongoDB. Never commit them or log them. BoxAPI uses `BOXAPI_INSTAGRAM_DM_TOKEN`, `BOXAPI_INSTAGRAM_TOKEN`, `BOXAPI_AI_TOKEN` and `BOXAPI_WEBHOOK_SECRET`.
 - **Persian first:** `dir="rtl"` and Persian copy by default. Handles, URLs, emails and phone numbers are shown `dir="ltr"`.
 - **Design tokens only:** components use semantic token classes (`bg-surface`, `text-ink`, ...), never raw Tailwind palette colours.
 - Match the surrounding code: short header comment naming the PRD section, small modules, `.js` import extensions in the backend.

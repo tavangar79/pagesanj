@@ -17,7 +17,7 @@ description: Use when adding or changing anything in backend/ - a Mongoose model
    - New env var → `src/config/env.ts` and `.env.example`.
 3. **Safety checks:**
    - [ ] No secret or message text logged at info; tokens encrypted at rest (`encryptField`).
-   - [ ] Webhook and `signed_request` HMACs verified with constant-time compare.
+   - [ ] Webhook HMACs verified with constant-time compare.
    - [ ] Idempotent: DM jobs keyed by `mid`, reviews unique per (target, shortcode).
    - [ ] Background jobs that call BoxAPI write a `jobRuns` entry (no cost or budget tracking).
 4. **Test** with vitest in `backend/tests/` (fixtures from real payloads in `tests/fixtures/`). `npm run typecheck` and `npm test` pass.

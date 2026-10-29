@@ -59,7 +59,7 @@ The full public website (shop pages, search) is **out of scope**. It comes a few
 ### 5.1 Flow
 
 1. A user sends pagesanj's Instagram Business account a DM.
-2. BoxAPI forwards the DM to `POST /webhooks/boxapi`. We check the `X-BoxApi-Signature` HMAC over `{X-BoxApi-Timestamp}.{raw body}` (using `BoxApiWebhookSecret`, timestamp within 300 s), add one job per message to the **BullMQ** queue `dm-inbound` with `jobId = mid` (so BoxAPI's retries, 3 × 60 s, don't create duplicate jobs), and return `200` right away. A worker processes steps 3–8.
+2. BoxAPI forwards the DM to `POST /webhooks/boxapi`. We check the `X-BoxApi-Signature` HMAC over `{X-BoxApi-Timestamp}.{raw body}` (using `BOXAPI_WEBHOOK_SECRET`, timestamp within 300 s), add one job per message to the **BullMQ** queue `dm-inbound` with `jobId = mid` (so BoxAPI's retries, 3 × 60 s, don't create duplicate jobs), and return `200` right away. A worker processes steps 3–8.
    - **Retries:** 3 attempts with exponential backoff for temporary failures (BoxAPI 5xx or timeouts). After the last attempt, the job stays in the failed set and is logged in `dmEvents.error`.
    - **Slow step on its own queue:** the post-owner lookup (§5.3) runs on a separate `post-owner` queue with low concurrency (e.g. 2), so a slow lookup doesn't hold up profile lookups. When it finishes, it re-enqueues the DM job to finish the reply.
    - **Sending:** replies go out through BoxAPI's `send_message` via a `dm-send` queue with a BullMQ rate limiter.
@@ -139,9 +139,9 @@ Every shop has a profile image, and has the contact details its own Instagram pa
 
 ### 6.2 BoxAPI Data API details
 
-- **Endpoint:** `POST https://instagram.boxpi.ir/api/instagram/user/get_media_by_username` (host for servers outside Iran) with `Authorization: Bearer <BoxApiInstagramToken>` and body `{"username": "sadegh.delicious", "count": 12, "max_id"?: "<next_max_id>"}`. One call per source; at most 12 posts per call.
+- **Endpoint:** `POST https://instagram.boxpi.ir/api/instagram/user/get_media_by_username` (host for servers outside Iran) with `Authorization: Bearer <BOXAPI_INSTAGRAM_TOKEN>` and body `{"username": "sadegh.delicious", "count": 12, "max_id"?: "<next_max_id>"}`. One call per source; at most 12 posts per call.
 - **Response:** wrapped as `{ status, response: { status_code, body } }`. **Fields used** (from `body.items[]`, to verify against a real response before building): `code` (shortcode), `taken_at`, `caption.text`, `usertags.in[].user.username` (also on carousel children), `user.username`, `image_versions2`, video URLs, `is_paid_partnership`, and a pinned flag. Also store the **full raw item**.
-- The token goes in `BoxApiInstagramToken` in `backend/.env`, never in the repo. Full endpoint notes: the `boxapi` skill (`.claude/skills/boxapi/SKILL.md`).
+- The token goes in `BOXAPI_INSTAGRAM_TOKEN` in `backend/.env`, never in the repo. Full endpoint notes: the `boxapi` skill (`.claude/skills/boxapi/SKILL.md`).
 
 ### 6.3 Pending review creation
 
@@ -181,17 +181,12 @@ Meta's review needs a real public presence. The landing page is its own React ap
   - that we don't sell or share it, and don't use it for ads;
   - how to ask for deletion, linking to the data-deletion page;
   - a contact email (`CONTACT_EMAIL`).
-- [ ] **Data-deletion instructions page:** the steps (remove the app in Instagram's settings under *Apps and websites*, or DM us, or email `CONTACT_EMAIL`), what gets deleted, and how long it takes. This URL is entered in the app dashboard as the **Data Deletion Instructions URL**. The callback (`POST /meta/data-deletion`) is entered as the **Data Deletion Callback URL**.
-- [ ] **The callback works end to end:** parse and verify `signed_request` with `META_APP_SECRET` (HMAC-SHA256), delete the user's data, store a `deletionRequests` record, and return `{ "url": "<PUBLIC_BASE_URL>/en/data-deletion/status?code=<code>", "confirmation_code": "<code>" }`. The status page shows that code's state.
-- [ ] **Deauthorize callback** (`POST /meta/deauthorize`) verifies `signed_request` and responds 200.
+- [ ] **Data-deletion instructions page:** the steps (remove the app in Instagram's settings under *Apps and websites*, or DM us, or email `CONTACT_EMAIL`), what gets deleted, and how long it takes. We have no Meta app, so there is no Meta deletion or deauthorize callback. A deletion deletes the user's `dmEvents`, stores a `deletionRequests` record and gives a confirmation code. The status page (`/en/data-deletion/status?code=<code>`) shows that code's state.
 - [ ] **Terms of use** page exists at a public URL (entered as the **Terms of Service URL**).
 - [ ] **Both languages:** the English pages are complete, not summaries, because Meta's reviewers read English. Persian pages carry the same content.
 - [ ] **App dashboard basics:** app icon (1024×1024), category, privacy policy URL, terms URL, and the contact email all match what the site shows.
 - [ ] The footer of every page links to privacy, terms and data deletion.
 
-- **Meta endpoints:**
-  - `POST /meta/deauthorize`: deauthorize callback.
-  - `POST /meta/data-deletion`: data deletion request callback. Parses `signed_request` with the app secret, deletes that user's messages, and returns `{ url, confirmation_code }`.
 - The landing page needs no database beyond the deletion status.
 
 ## 8. Data model (MongoDB, Mongoose)
@@ -310,7 +305,7 @@ A category in use by any shop can't be deleted; the admin must move those shops 
 
 | Field | Type | Description |
 |---|---|---|
-| `type` | enum: `daily_check \| backfill \| post_owner_lookup \| profile_fetch \| token_refresh` | Which job ran. `profile_fetch` is the shop profile run (§5.6). |
+| `type` | enum: `daily_check \| backfill \| post_owner_lookup \| profile_fetch \| token_refresh` | Which job ran. `profile_fetch` is the shop profile run (§5.6). `token_refresh` only appears on old records. |
 | `startedAt` | date | Start time. |
 | `finishedAt?` | date | End time; empty while running or if it crashed. |
 | `apifyRunId?` | string | Apify's run ID, to open the run in Apify's console. |
@@ -326,14 +321,6 @@ A category in use by any shop can't be deleted; the admin must move those shops 
 | `igsidHash` | string | Hash of the user's Instagram-scoped ID: enough to find and delete their data without keeping the ID itself. |
 | `status` | enum: `pending \| done` | Whether their data has been deleted yet. |
 | `at` | date | When the request arrived. |
-
-### `metaToken`: the Instagram access token (a single document)
-
-| Field | Type | Description |
-|---|---|---|
-| `accessTokenEnc` | string | The long-lived token, encrypted with `DATA_ENCRYPTION_KEY` (pagesanj's `encryptField`, its own AAD `meta:token`). Seeded from `IG_ACCESS_TOKEN`, then replaced by each refresh (§10). |
-| `expiresAt` | date | When the token expires (60 days after the last refresh). |
-| `refreshedAt` | date | Last successful refresh. |
 
 ### `admins`: people who can log in to the admin panel
 
@@ -392,8 +379,8 @@ Login works exactly like pagesanj's admin login: **username + password + a 6-dig
 We have **no Meta app of our own**: no App Review, no Graph API token and no token refresh. BoxAPI's official, Meta-approved DM & Comment API does that part. Endpoint details are in the `boxapi` skill.
 
 1. Connect pagesanj's **Instagram Business (or Creator) account** to BoxAPI through BoxAPI's official Instagram login link (`instagram_oauth_url` from `GET https://boxapi.ir/service/info`).
-2. In the BoxAPI panel (*API settings*): set the webhook URL to `https://<PUBLIC_BASE_URL>/webhooks/boxapi`, and generate the **webhook secret** (`BoxApiWebhookSecret`). The route rejects every request until the secret is set.
-3. **Tokens** in `backend/.env`: `BoxApiInstagramDMToken` (DM & Comment API, header `X-Api-Key`), `BoxApiInstagramToken` (Instagram Data API, Bearer), `BoxApiAIToken` (AI API, Bearer, e.g. the `typesafe/jev-*` models).
+2. In the BoxAPI panel (*API settings*): set the webhook URL to `https://<PUBLIC_BASE_URL>/webhooks/boxapi`, and generate the **webhook secret** (`BOXAPI_WEBHOOK_SECRET`). The route rejects every request until the secret is set.
+3. **Tokens** in `backend/.env`: `BOXAPI_INSTAGRAM_DM_TOKEN` (DM & Comment API, header `X-Api-Key`), `BOXAPI_INSTAGRAM_TOKEN` (Instagram Data API, Bearer), `BOXAPI_AI_TOKEN` (AI API, Bearer, e.g. the `typesafe/jev-*` models).
 4. **Send API:** `POST https://boxapi.ir/service/actions/send_message` with `{ account_id, recipient_id, message }`. `account_id` is the connected page's UUID, and `recipient_id` is the webhook's `sender.id`.
 5. **BoxAPI rules:** message only people who messaged or commented first. No bulk or unsolicited messages (BoxAPI closes accounts for spam).
 6. **Hosting:** the backend runs **outside Iran**, so the Data API uses `https://instagram.boxpi.ir` and the AI API uses `https://ai.boxpi.ir`.
@@ -405,23 +392,23 @@ We have **no Meta app of our own**: no App Review, no Graph API token and no tok
 - **Language:** *builder's call:* TypeScript, run with `tsx` in development and compiled with `tsc` for production. This matches pagesanj and makes the later website share types.
 - **Validation:** zod (as in pagesanj). **Tests:** vitest with mongodb-memory-server (as in pagesanj).
 - **Queue:** **BullMQ** on **Redis**.
-  - Queues: `dm-inbound`, `post-owner`, `dm-send`, `apify-daily`, `apify-backfill`, `apify-profile` (shop profile fetch, §5.6), `token-refresh`.
+  - Queues: `dm-inbound`, `post-owner`, `dm-send`, `apify-daily`, `apify-backfill`, `apify-profile` (shop profile fetch, §5.6).
   - Workers run in a separate process (`npm run worker`) from the Express web process, so the webhook stays fast.
-- **Scheduler:** BullMQ **job schedulers** (repeatable jobs), with the timezone set to `Asia/Tehran`, for the daily Apify check (§6.1) and the weekly token refresh (§10). Each job runs once even with several workers, so no separate lock is needed.
+- **Scheduler:** BullMQ **job schedulers** (repeatable jobs), with the timezone set to `Asia/Tehran`, for the daily Apify check (§6.1). Each job runs once even with several workers, so no separate lock is needed.
 - **Monitoring:** Bull Board mounted at `/admin/queues`, behind the admin login.
 - **Structure:** an npm workspaces repo with three folders: `backend/` (Express web process and workers), `admin/` and `web/`.
   - `backend/src/queues/`: queue definitions and workers.
-  - `backend/src/routes/`: webhooks, landing, admin, meta callbacks.
+  - `backend/src/routes/`: webhooks, landing, admin.
   - `backend/src/bot/`: parse, resolve, lookup, reply. The core is **pure and transport-agnostic**.
   - `backend/src/apify/`: client, daily check, backfill, post owner.
-  - `backend/src/meta/`: signature check, send API, token refresh, signed_request.
+  - `backend/src/boxapi/`: BoxAPI webhook signature and DM send (`send_message`).
   - `backend/src/models/`, `backend/src/jobs/`, `backend/src/i18n/` (fa, en strings for bot replies).
   - `admin/`: the admin React app (Vite, Tailwind, shadcn/ui under `admin/src/components/ui`). Its build output is served by Express.
   - `web/`: the public website React app (Vite, Tailwind), with the landing and legal pages (§7) and its own fa/en strings in `web/src/i18n/`. It has a client build (CSS, fonts, assets) and an SSR build (`web/dist/server/entry-server.js`, exporting `render(url, data)`). Express calls `render` for every public route and passes in server data such as a deletion code's status. The future public website (shop pages, search) grows from this app.
 - **Admin UI:** React, Vite, Tailwind CSS v4, shadcn/ui, lucide-react icons. The design comes from the ui-ux-pro-max skill, starting from pagesanj's design tokens (§9).
 - **Website UI:** React, Vite, Tailwind CSS v4, server-rendered by Express (§7.1). The design comes from the Taste skill and is written down in `web/DESIGN.md`.
-- **Configuration (environment variables):** `MONGODB_URI`, `REDIS_URL`, `META_APP_ID`, `META_APP_SECRET`, `META_VERIFY_TOKEN`, `IG_ACCESS_TOKEN` (initial value), `IG_ACCOUNT_ID`, `GRAPH_API_VERSION`, `APIFY_TOKEN`, `APIFY_BUDGET_STOP_USD`, `DAILY_CHECK_CRON`, `SESSION_SECRET`, `DATA_ENCRYPTION_KEY` (**the same value as pagesanj's**, §9.1), `PAGESANJ_MONGODB_URI` (optional, read-only, only for `admin:import`), `PUBLIC_BASE_URL`, `CONTACT_EMAIL` (shown on the legal pages, §7), `TRUST_PROXY` (true behind one trusted reverse proxy, so the login lockout sees the real client IP), `ADMIN_PASSWORD` (only for `admin:create`).
-- **Hosting:** any Node host with HTTPS and a stable public URL, which Meta webhooks require. **Database:** MongoDB Atlas (free tier is enough for v1). **Redis:** a managed Redis (e.g. Upstash or Redis Cloud free tier), or Redis next to the app. Set `maxmemory-policy noeviction`, as BullMQ requires.
+- **Configuration (environment variables):** `MONGODB_URI`, `REDIS_URL`, `BOXAPI_INSTAGRAM_DM_TOKEN`, `BOXAPI_INSTAGRAM_TOKEN`, `BOXAPI_AI_TOKEN`, `BOXAPI_WEBHOOK_SECRET`, `APIFY_TOKEN`, `APIFY_BUDGET_STOP_USD`, `DAILY_CHECK_CRON`, `SESSION_SECRET`, `DATA_ENCRYPTION_KEY` (**the same value as pagesanj's**, §9.1), `PAGESANJ_MONGODB_URI` (optional, read-only, only for `admin:import`), `PUBLIC_BASE_URL`, `CONTACT_EMAIL` (shown on the legal pages, §7), `TRUST_PROXY` (true behind one trusted reverse proxy, so the login lockout sees the real client IP), `ADMIN_PASSWORD` (only for `admin:create`).
+- **Hosting:** any Node host with HTTPS and a stable public URL, which the BoxAPI webhook requires. **Database:** MongoDB Atlas (free tier is enough for v1). **Redis:** a managed Redis (e.g. Upstash or Redis Cloud free tier), or Redis next to the app. Set `maxmemory-policy noeviction`, as BullMQ requires.
 - **Logging:** structured JSON logs with **pino** (`backend/src/lib/logger.ts`), `pino-http` for Express request logs, and `pino-pretty` in development only. Each worker uses a child logger carrying `{ queue, jobId }`. Never log tokens or full message bodies at info level: pino's `redact` option removes tokens, `signed_request`, `authorization` headers and message `text`. Message bodies are logged only at `debug`.
 
 ## 12. Security and privacy
@@ -458,7 +445,7 @@ We have **no Meta app of our own**: no App Review, no Graph API token and no tok
 3. **Reviewer posts tagging several businesses:** one pending review per business (current assumption). Confirm.
 4. **Shared post and profile payloads:** BoxAPI only documents the `ig_reel` share. Log real ones in M0.
 5. **Categories:** one level, or a parent/child tree (e.g. «پوشاک» › «کفش»)? Current assumption: one level.
-6. **Deletion callback ID:** with Instagram Login, is the `user_id` in Meta's `signed_request` the same ID the messaging webhooks send as the sender (IGSID)? The callback deletes `dmEvents` by that ID. Check with a tester account during the webhook spike.
+6. **Deletion requests:** with no Meta callback, how does a user's request (DM or email) reach `requestDeletion`? An admin action is the likely answer.
 7. **Deletion and the queue:** finished DM jobs stay in Redis for up to 7 days (BullMQ `removeOnComplete`) and hold the message. A deletion request doesn't remove them yet. Shorten that retention for the DM queues, or remove a user's jobs on deletion, before App Review.
 
 ## 16. Decisions made by the builder or assistant (please check)
@@ -470,7 +457,7 @@ We have **no Meta app of our own**: no App Review, no Graph API token and no tok
 - Unknown tagged businesses from reviewer posts go to the wishlist (with the pending review attached) instead of creating a shop.
 - Backfill cap of 50 posts per new source; daily check at 09:00 Tehran time.
 - Post-to-author lookup via BoxAPI's Data API, with a permanent cache.
-- **2026-10-28: BoxAPI replaces Meta's Graph API and Apify.** DMs come in on `POST /webhooks/boxapi` and go out through BoxAPI's `send_message`. Reviewer posts, post owners and shop profiles come from BoxAPI's Instagram Data API. AI calls (Jev models) go to BoxAPI's AI API. Our own Meta app, App Review, token refresh and all cost and budget tracking are dropped. Until the M5 migration lands, the old Meta and Apify code (`/webhooks/instagram`, `src/meta/`, `src/apify/`, `jobRuns.costUsd`) is still in place and is removed by that work.
+- **2026-10-28: BoxAPI replaces Meta's Graph API and Apify.** DMs come in on `POST /webhooks/boxapi` and go out through BoxAPI's `send_message`. Reviewer posts, post owners and shop profiles come from BoxAPI's Instagram Data API. AI calls (Jev models) go to BoxAPI's AI API. Our own Meta app, App Review, token refresh and all cost and budget tracking are dropped. **2026-10-29:** the Meta part is done. DM replies go through `send_message` (with the webhook's `account_id`), and the Meta webhook, `/meta/*` callbacks, token refresh, `metaToken` and the Meta env vars are gone. The Apify code (`src/apify/`, `jobRuns.costUsd`) is still in place until the rest of M5 lands.
 - Persian replies by default. English when the message's own words (ignoring URLs and @handles) have at least 3 Latin letters and more Latin than Persian/Arabic letters.
 - A 90-day retention period for DM logs.
 - Shop profiles (image and contact details) are fetched on create and on demand, not daily.
