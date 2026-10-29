@@ -1,0 +1,85 @@
+# Local / single-host stack (PRD §11): MongoDB, Redis, the backend web process and the worker.
+# admin and web are build-only (scale 0): their images hold the built files that the backend image copies in.
+#   docker compose up -d --build
+# Secrets come from backend/.env (template: backend/.env.example); Mongo and Redis URLs are set here.
+
+x-backend: &backend
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+    additional_contexts:
+      admin: service:admin
+      web: service:web
+  image: pagesanj/backend
+  env_file:
+    - path: backend/.env
+      required: false
+  environment:
+    NODE_ENV: production
+    MONGODB_URI: mongodb://mongo:27017/pagesanj
+    REDIS_URL: redis://redis:6379
+  depends_on:
+    mongo:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  backend:
+    <<: *backend
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      MONGODB_URI: mongodb://mongo:27017/pagesanj
+      REDIS_URL: redis://redis:6379
+
+  worker:
+    <<: *backend
+    command: ["node", "dist/worker.js"]
+    healthcheck:
+      disable: true
+
+  admin:
+    build:
+      context: .
+      dockerfile: admin/Dockerfile
+    image: pagesanj/admin
+    scale: 0
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    image: pagesanj/web
+    scale: 0
+
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    # BullMQ needs noeviction (see backend/.env.example)
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  mongo-data:
+  redis-data:
