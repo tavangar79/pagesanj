@@ -23,12 +23,15 @@ flowchart LR
     dataapi["Instagram Data API<br/>posts · post info · profiles · quota"]
   end
 
-  subgraph web["Web process (npm run dev / start)<br/>Express"]
+  subgraph web["Backend web process (npm run dev / start)<br/>Express API :3000"]
     wh["POST /webhooks/boxapi<br/>HMAC check"]
-    adminapi["/admin/api/*<br/>JSON API + /admin SPA"]
+    adminapi["/admin/api/*<br/>JSON API"]
     board["/admin/queues<br/>Bull Board"]
-    site["/ (SSR website)<br/>+ /media/shop/:sha"]
+    pub["/api/deletion-status<br/>+ /media/shop/:sha"]
   end
+
+  adminapp["admin/ (nginx :8080)<br/>/admin SPA, proxies /admin/api + /admin/queues"]
+  site["web/ (server.js :3001)<br/>SSR website"]
 
   subgraph redis["Redis (BullMQ)"]
     q1[[dm-inbound]]
@@ -56,21 +59,23 @@ flowchart LR
   w -- read posts / profiles --> dataapi
   w <--> db
 
-  admin --> adminapi
-  admin --> board
+  admin --> adminapp
+  adminapp --> adminapi
+  adminapp --> board
   adminapi <--> db
   adminapi -- enqueue --> q4 & q5 & q6
   board --- redis
 
   visitor --> site
-  site <--> db
+  site -- deletion status --> pub
+  pub <--> db
 ```
 
-There are **two Node processes** that share MongoDB and Redis:
+The backend has **two Node processes** that share MongoDB and Redis. The website and admin app are separate services (§6).
 
 | Process | Entry | Does |
 |---|---|---|
-| Web | `backend/src/server.ts` → `app.ts` | Receives webhooks, serves the admin API and SPA, Bull Board and the SSR website. It never calls Instagram itself: slow work goes into a queue. |
+| Web | `backend/src/server.ts` → `app.ts` | Receives webhooks, serves the admin JSON API, Bull Board, shop images and the public deletion-status API. It never calls Instagram itself: slow work goes into a queue. |
 | Worker | `backend/src/worker.ts` | Runs every queue's worker and registers the daily scheduler. All BoxAPI calls happen here. |
 
 ## 2. Feature 1: the DM bot
@@ -241,12 +246,12 @@ Also `admins` and `loginAttempts` (admin login with TOTP, same formats as pagesa
 
 ## 6. Admin panel and website
 
-- **Admin** (`admin/`, Vite + React, served at `/admin`). The screens are pending reviews, wishlist, shops, categories, reviewer sources and jobs. Login needs a password plus a TOTP code, and every write needs a CSRF token. Bull Board is at `/admin/queues`.
-- **Website** (`web/`, Vite + React SSR, rendered by Express at `/`). It has the landing page and the legal pages Meta requires (`/privacy`, `/terms`, `/data-deletion` plus a deletion-status lookup), in fa (RTL, the default) and en.
+- **Admin** (`admin/`, Vite + React at `/admin`, served by its own nginx image that proxies `/admin/api` and `/admin/queues` to the backend). The screens are pending reviews, wishlist, shops, categories, reviewer sources and jobs. Login needs a password plus a TOTP code, and every write needs a CSRF token. Bull Board is at `/admin/queues`.
+- **Website** (`web/`, Vite + React SSR, rendered by its own server `web/server.js` at `/`; it asks the backend only for deletion statuses). It has the landing page and the legal pages Meta requires (`/privacy`, `/terms`, `/data-deletion` plus a deletion-status lookup), in fa (RTL, the default) and en.
 
 ## 7. Configuration
 
-Everything goes through `backend/src/config/env.ts`; the template is `backend/.env.example`.
+Backend config goes through `backend/src/config/env.ts`; the template is `backend/.env.example`. The website reads `CONTACT_EMAIL`, `SITE_INSTAGRAM_HANDLE`, `COMPANY_NAME` and `API_URL` (template `web/.env.example`); the admin image reads `BACKEND_URL`.
 
 | Variable | For |
 |---|---|
@@ -271,5 +276,62 @@ npm run dev          # web process  → http://localhost:3000
 npm run dev:worker   # worker process (needed for replies, lookups, daily check)
 npm run dev:admin    # admin panel dev server
 npm run dev:web      # website dev server
-npm test             # backend tests (vitest, in-memory MongoDB)
+npm test             # backend tests (vitest, in-memory MongoDB) and website server tests
+
+docker compose up -d --build   # backend :3000, worker, web :3001, admin :8080, MongoDB, Redis
 ```
+
+## 9. Deploying on Hamravesh (Kubernetes)
+
+Hamravesh runs each part as its own app, the same way `docker-compose.yml` runs them side by side. Six apps in one namespace:
+
+| App | Image | Command | Port | Public domain | Health check |
+|---|---|---|---|---|---|
+| `mongo` | MongoDB 7 (managed / one-click) | n/a | 27017 | no | built in |
+| `redis` | Redis 7 (managed / one-click) | n/a | 6379 | no | built in |
+| `backend` | `pagesanj/backend` | default (`node dist/server.js`) | 3000 | yes, BoxAPI posts the webhook here | HTTP `GET /healthz` |
+| `worker` | `pagesanj/backend` (**same image**) | `node dist/worker.js` | none | no | none (it serves no HTTP) |
+| `web` | `pagesanj/web` | default (`node server.js`) | 3001 | yes, the public site | HTTP `GET /healthz` |
+| `admin` | `pagesanj/admin` | default (nginx) | 8080 | yes, the panel at `/admin` | HTTP `GET /healthz` |
+
+`backend` and `worker` never call each other. The API puts jobs into Redis and the workers take them out.
+
+### Steps
+
+1. **Build and push the images.** Every Dockerfile uses the repo root as its build context, so clone with submodules first:
+   ```bash
+   git clone --recurse-submodules <root repo> && cd pagesanj
+   docker build -f backend/Dockerfile -t <registry>/pagesanj/backend:<tag> .
+   docker build -f web/Dockerfile     -t <registry>/pagesanj/web:<tag> .
+   docker build -f admin/Dockerfile   -t <registry>/pagesanj/admin:<tag> .
+   docker push <registry>/pagesanj/backend:<tag>   # and the other two
+   ```
+   Push to Hamravesh's registry or any registry it can pull from. Building from git inside Hamravesh also works if it can fetch the submodules and lets you set the Dockerfile path and the root context.
+2. **Redis.** Give it a persistent volume, AOF on (`appendonly yes`) and `maxmemory-policy noeviction`. BullMQ can lose jobs under any other eviction policy.
+3. **MongoDB.** Give it a persistent volume, and turn on backups.
+4. **`backend`.** Deploy from the backend image on port 3000. Set every variable from `backend/.env.example` (§7) as app secrets/env, with:
+   - `MONGODB_URI` and `REDIS_URL` pointing at the internal addresses of the `mongo` and `redis` apps (the Hamravesh panel shows them).
+   - `NODE_ENV=production`, `TRUST_PROXY=true` (it runs behind Hamravesh's ingress), `PUBLIC_BASE_URL=https://<web domain>`.
+   - A domain with HTTPS.
+5. **`worker`.** Create a second app from the **same backend image and tag**, with the **same env vars**, and override the command to `node dist/worker.js`. No port, no domain, no HTTP health check. Set the termination grace period to 30–60s: on `SIGTERM` the worker finishes its running jobs before it exits.
+6. **`web`.** Deploy from the web image on port 3001 with the `web/.env.example` variables. Set `API_URL` to the backend's internal address (`http://<backend app>:3000`). Give it the public site domain.
+7. **`admin`.** Deploy from the admin image on port 8080, with `BACKEND_URL` set to the backend's internal address. Give it a domain. nginx proxies `/admin/api` and `/admin/queues`, so the panel and API share one origin and the session cookie just works.
+8. **First admin.** The admin scripts run through `tsx`, a dev dependency that isn't in the image, so run them from a dev checkout. Point `backend/.env` at the production `MONGODB_URI` (for example through a port-forward to the `mongo` app), set `ADMIN_PASSWORD` and `DATA_ENCRYPTION_KEY`, then run `npm run admin:create -- <username>`. To copy admins from pagesanj, run `npm run admin:import -- <username>` instead.
+9. **BoxAPI.** Set the webhook URL in the BoxAPI/SendBox panel to `https://<backend domain>/webhooks/boxapi` and copy its secret into `BOXAPI_WEBHOOK_SECRET`. Until it's set, every webhook is rejected.
+10. **Check.** `GET /healthz` on backend, web and admin. Send the Instagram account a DM and follow it through Bull Board (`/admin/queues`): `dm-inbound` → `post-owner` → `dm-send`.
+
+> **Region:** the BoxAPI defaults assume the backend is **outside Iran** (PRD §10). If the Hamravesh apps run in an Iranian data centre, switch the hosts: `BOXAPI_DM_BASE_URL=https://boxapi.ir` (the DM API's Iran host) and `BOXAPI_INSTAGRAM_BASE_URL=https://boxapi.ir`. Update PRD §10 if that becomes the plan.
+
+### Updating
+
+Build and push a new tag, then point **both** `backend` and `worker` at it. They share models and queue payloads, so they should always run the same version.
+
+### Scaling
+
+- **More workers: raise `worker`'s replica count.** BullMQ locks each job in Redis, so each job runs on exactly one replica.
+  - The daily scheduler is registered with a fixed id (`upsertJobScheduler`), so extra replicas don't create duplicate daily runs.
+  - The `dm-send` limiter (10 sends/s) and the per-recipient send limit live in Redis, so they stay global however many replicas run.
+  - `concurrency` is **per process**: `post-owner` and `shop-profile` run 2 jobs each per replica, so 3 replicas make 6 Data API calls at once. Check that against the BoxAPI plan and its quota (§7).
+  - Most of the work is waiting on BoxAPI, so if one queue backs up, raise that worker's `concurrency` before adding replicas.
+- **More API: raise `backend`'s replica count.** The web process holds no state in memory: admin sessions are signed cookies and everything else is in MongoDB or Redis.
+- Run **one** MongoDB and **one** Redis. Every replica of every app shares them.

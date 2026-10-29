@@ -15,7 +15,7 @@ A standalone backend service, built with Node.js, Express and MongoDB, that does
 2. **Daily reviewer-page check.** Once a day, BoxAPI's Instagram Data API pulls new posts from reviewer pages we follow (e.g. `@sadegh.delicious`). Each new post becomes a **pending review** on the shop the post tags.
 3. **Bilingual landing page (EN/FA).** A public site with the pages Meta needs to approve the app (privacy policy, terms, data deletion).
 
-Admins approve the pending reviews and work through the wishlist in a small, password-protected admin panel served by the same app.
+Admins approve the pending reviews and work through the wishlist in a small, password-protected admin panel with its own JSON API on the backend.
 
 The full public website (shop pages, search) is **out of scope**. It comes a few months later and will read the same data.
 
@@ -152,7 +152,7 @@ Every shop has a profile image, and has the contact details its own Instagram pa
 
 ## 7. Feature 3: Landing page (EN/FA)
 
-Meta's review needs a real public presence. The landing page is its own React app in `web/` (Vite, React, TypeScript, Tailwind CSS v4, set up like `admin/`), and the same Express app renders it on the server (§11).
+Meta's review needs a real public presence. The landing page is its own React app in `web/` (Vite, React, TypeScript, Tailwind CSS v4, set up like `admin/`), and its own small Node server (`web/server.js`) renders it on the server (§11). It runs without the backend, which it asks only for a data-deletion request's status.
 
 ### 7.1 Design (Taste skill)
 
@@ -394,18 +394,18 @@ We have **no Meta app of our own**: no App Review, no Graph API token and no tok
   - Workers run in a separate process (`npm run worker`) from the Express web process, so the webhook stays fast.
 - **Scheduler:** BullMQ **job schedulers** (repeatable jobs), with the timezone set to `Asia/Tehran`, for the daily reviewer check (§6.1). Each job runs once even with several workers, so no separate lock is needed.
 - **Monitoring:** Bull Board mounted at `/admin/queues`, behind the admin login.
-- **Structure:** an npm workspaces repo with three folders: `backend/` (Express web process and workers), `admin/` and `web/`.
+- **Structure:** an npm workspaces repo with three folders, each its own service and Docker image: `backend/` (the API: Express web process and workers), `admin/` and `web/`. `docker-compose.yml` runs them side by side with MongoDB and Redis.
   - `backend/src/queues/`: queue definitions and workers.
-  - `backend/src/routes/`: webhooks, landing, admin.
+  - `backend/src/routes/`: webhooks, media, the public deletion-status API, admin JSON API.
   - `backend/src/bot/`: parse, resolve, lookup, reply. The core is **pure and transport-agnostic**.
   - `backend/src/boxapi/`: BoxAPI webhook signature, DM send (`send_message`), and the Data API client with its post and profile mappers.
   - `backend/src/services/`: domain logic, including the reviewer-post backfill and daily check (`reviewerPosts.ts`) and the post-owner lookup (`postOwners.ts`).
   - `backend/src/models/`, `backend/src/jobs/`, `backend/src/i18n/` (fa, en strings for bot replies).
-  - `admin/`: the admin React app (Vite, Tailwind, shadcn/ui under `admin/src/components/ui`). Its build output is served by Express.
-  - `web/`: the public website React app (Vite, Tailwind), with the landing and legal pages (§7) and its own fa/en strings in `web/src/i18n/`. It has a client build (CSS, fonts, assets) and an SSR build (`web/dist/server/entry-server.js`, exporting `render(url, data)`). Express calls `render` for every public route and passes in server data such as a deletion code's status. The future public website (shop pages, search) grows from this app.
+  - `admin/`: the admin React app (Vite, Tailwind, shadcn/ui under `admin/src/components/ui`). Its build is served by its own nginx image, which proxies `/admin/api` and `/admin/queues` to the backend so the browser sees one origin.
+  - `web/`: the public website React app (Vite, Tailwind), with the landing and legal pages (§7) and its own fa/en strings in `web/src/i18n/`. It has a client build (CSS, fonts, assets) and an SSR build (`web/dist/server/entry-server.js`, exporting `render(url, data)`). `web/server.js` (Express) calls `render` for every public route and passes in server data such as a deletion code's status, which it reads from the backend's `GET /api/deletion-status`. The future public website (shop pages, search) grows from this app.
 - **Admin UI:** React, Vite, Tailwind CSS v4, shadcn/ui, lucide-react icons. The design comes from the ui-ux-pro-max skill, starting from pagesanj's design tokens (§9).
-- **Website UI:** React, Vite, Tailwind CSS v4, server-rendered by Express (§7.1). The design comes from the Taste skill and is written down in `web/DESIGN.md`.
-- **Configuration (environment variables):** `MONGODB_URI`, `REDIS_URL`, `BOXAPI_INSTAGRAM_DM_TOKEN`, `BOXAPI_INSTAGRAM_TOKEN`, `BOXAPI_AI_TOKEN`, `BOXAPI_WEBHOOK_SECRET`, `BOXAPI_DM_BASE_URL` and `BOXAPI_INSTAGRAM_BASE_URL` (optional), `REVIEW_IGNORE_HANDLES`, `DAILY_CHECK_CRON`, `SESSION_SECRET`, `DATA_ENCRYPTION_KEY` (**the same value as pagesanj's**, §9.1), `PAGESANJ_MONGODB_URI` (optional, read-only, only for `admin:import`), `PUBLIC_BASE_URL`, `CONTACT_EMAIL` (shown on the legal pages, §7), `TRUST_PROXY` (true behind one trusted reverse proxy, so the login lockout sees the real client IP), `ADMIN_PASSWORD` (only for `admin:create`).
+- **Website UI:** React, Vite, Tailwind CSS v4, server-rendered by `web/server.js` (§7.1). The design comes from the Taste skill and is written down in `web/DESIGN.md`.
+- **Configuration (environment variables):** `MONGODB_URI`, `REDIS_URL`, `BOXAPI_INSTAGRAM_DM_TOKEN`, `BOXAPI_INSTAGRAM_TOKEN`, `BOXAPI_AI_TOKEN`, `BOXAPI_WEBHOOK_SECRET`, `BOXAPI_DM_BASE_URL` and `BOXAPI_INSTAGRAM_BASE_URL` (optional), `REVIEW_IGNORE_HANDLES`, `DAILY_CHECK_CRON`, `SESSION_SECRET`, `DATA_ENCRYPTION_KEY` (**the same value as pagesanj's**, §9.1), `PAGESANJ_MONGODB_URI` (optional, read-only, only for `admin:import`), `PUBLIC_BASE_URL` (the website's URL, for the deletion-status link), `TRUST_PROXY` (true behind one trusted reverse proxy, so the login lockout sees the real client IP), `ADMIN_PASSWORD` (only for `admin:create`). The website has its own: `CONTACT_EMAIL` (shown on the legal pages, §7), `SITE_INSTAGRAM_HANDLE`, `COMPANY_NAME`, `API_URL` (the backend). The admin image has `BACKEND_URL`.
 - **Hosting:** any Node host with HTTPS and a stable public URL, which the BoxAPI webhook requires. **Database:** MongoDB Atlas (free tier is enough for v1). **Redis:** a managed Redis (e.g. Upstash or Redis Cloud free tier), or Redis next to the app. Set `maxmemory-policy noeviction`, as BullMQ requires.
 - **Logging:** structured JSON logs with **pino** (`backend/src/lib/logger.ts`), `pino-http` for Express request logs, and `pino-pretty` in development only. Each worker uses a child logger carrying `{ queue, jobId }`. Never log tokens or full message bodies at info level: pino's `redact` option removes tokens, `signed_request`, `authorization` headers and message `text`. Message bodies are logged only at `debug`.
 
@@ -449,8 +449,8 @@ We have **no Meta app of our own**: no App Review, no Graph API token and no tok
 ## 16. Decisions made by the builder or assistant (please check)
 
 - TypeScript rather than plain JavaScript.
-- The landing and legal pages are a separate React app (`web/`, Vite SSR build) that the same Express app renders on the server, rather than templates in `src/views/`. The pages still work without client JavaScript, as Meta's reviewers require.
-- The admin panel is a Vite + React app (Tailwind, shadcn/ui, designed with the ui-ux-pro-max skill), served by the same Express app with a JSON API, rather than a Next.js app.
+- The landing and legal pages are a separate React app (`web/`, Vite SSR build) with its own small Node server that renders it, rather than templates in `src/views/`. It runs as its own service, not inside the backend. The pages still work without client JavaScript, as Meta's reviewers require.
+- The admin panel is a Vite + React app (Tailwind, shadcn/ui, designed with the ui-ux-pro-max skill), served by its own nginx image that proxies the backend's JSON API, rather than a Next.js app.
 - Admin accounts reuse pagesanj's: same `DATA_ENCRYPTION_KEY`, same password hash and TOTP formats, copied with `admin:import`, so one authenticator entry works for both panels.
 - Unknown tagged businesses from reviewer posts go to the wishlist (with the pending review attached) instead of creating a shop.
 - Backfill cap of 50 posts per new source; daily check at 09:00 Tehran time.

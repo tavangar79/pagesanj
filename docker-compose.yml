@@ -1,21 +1,20 @@
-# Local / single-host stack (PRD §11): MongoDB, Redis, the backend web process and the worker.
-# admin and web are build-only (scale 0): their images hold the built files that the backend image copies in.
+# Local / single-host stack (PRD §11). Each of backend/, web/ and admin/ is its own image and runs on its own;
+# here they run side by side with MongoDB and Redis:
 #   docker compose up -d --build
-# Secrets come from backend/.env (template: backend/.env.example); Mongo and Redis URLs are set here.
+#   backend (API, BoxAPI webhook) :3000   web (public site) :3001   admin (panel at /admin) :8080
+# Secrets come from backend/.env and web/.env (templates: .env.example in each); service URLs are set here.
 
 x-backend: &backend
   build:
     context: .
     dockerfile: backend/Dockerfile
-    additional_contexts:
-      admin: service:admin
-      web: service:web
   image: pagesanj/backend
   env_file:
     - path: backend/.env
       required: false
   environment:
     NODE_ENV: production
+    PORT: 3000
     MONGODB_URI: mongodb://mongo:27017/pagesanj
     REDIS_URL: redis://redis:6379
   depends_on:
@@ -29,12 +28,7 @@ services:
   backend:
     <<: *backend
     ports:
-      - "${PORT:-3000}:3000"
-    environment:
-      NODE_ENV: production
-      PORT: 3000
-      MONGODB_URI: mongodb://mongo:27017/pagesanj
-      REDIS_URL: redis://redis:6379
+      - "${BACKEND_PORT:-3000}:3000"
 
   worker:
     <<: *backend
@@ -42,19 +36,32 @@ services:
     healthcheck:
       disable: true
 
-  admin:
-    build:
-      context: .
-      dockerfile: admin/Dockerfile
-    image: pagesanj/admin
-    scale: 0
-
   web:
     build:
       context: .
       dockerfile: web/Dockerfile
     image: pagesanj/web
-    scale: 0
+    env_file:
+      - path: web/.env
+        required: false
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      API_URL: http://backend:3000
+    ports:
+      - "${WEB_PORT:-3001}:3001"
+    restart: unless-stopped
+
+  admin:
+    build:
+      context: .
+      dockerfile: admin/Dockerfile
+    image: pagesanj/admin
+    environment:
+      BACKEND_URL: http://backend:3000
+    ports:
+      - "${ADMIN_PORT:-8080}:8080"
+    restart: unless-stopped
 
   mongo:
     image: mongo:7

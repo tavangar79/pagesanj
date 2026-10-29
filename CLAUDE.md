@@ -8,9 +8,9 @@ npm workspaces, three folders:
 
 | Folder | What | Stack |
 |---|---|---|
-| `backend/` | Express web process + BullMQ worker process | Node 22+, TypeScript (NodeNext ESM), Mongoose, BullMQ/Redis, zod, pino, vitest |
-| `admin/` | Admin panel at `/admin` (built files served by backend) | Vite, React 19, Tailwind v4, shadcn/ui, react-router |
-| `web/` | Public website, server-rendered by backend | Vite (client + SSR build), React 19, Tailwind v4 |
+| `backend/` | API (Express web process: webhooks, admin JSON API, Bull Board) + BullMQ worker process | Node 22+, TypeScript (NodeNext ESM), Mongoose, BullMQ/Redis, zod, pino, vitest |
+| `admin/` | Admin panel at `/admin`, served by its own nginx image that proxies `/admin/api` to the backend | Vite, React 19, Tailwind v4, shadcn/ui, react-router |
+| `web/` | Public website, server-rendered by its own Node server (`web/server.js`) | Vite (client + SSR build), React 19, Tailwind v4 |
 
 `design-system/pagesanj/MASTER.md` holds the admin design tokens. The public website has its own design system in `web/DESIGN.md` (Taste skill).
 
@@ -22,15 +22,16 @@ This root repo uses one branch, `master`. Each folder is a **git submodule** wit
 
 - `npm install` installs all workspaces.
 - `npm run dev` runs the backend, `npm run dev:worker` the worker, and `npm run dev:admin` / `npm run dev:web` the frontends.
-- `npm run build` builds admin, web, then backend.
-- `npm run typecheck` and `npm test` check the backend.
+- `npm run build` builds admin, web, then backend. `npm run start:web` runs the built website.
+- `docker compose up -d --build` runs backend, worker, web, admin, MongoDB and Redis side by side; each folder has its own `Dockerfile` (build context: the repo root).
+- `npm run typecheck` checks the backend; `npm test` runs the backend and website tests.
 - `npm run admin:import -- <username>` / `npm run admin:create -- <username>`.
 
 ## Rules that apply everywhere
 
 - **Never publish without an admin's approval**, never log into Instagram with a password, and always reply about the post's *author*, not tagged accounts (PRD §3, §5.2).
 - **Instagram and AI go through BoxAPI only** (boxapi.ir, PRD §10; use the `boxapi` skill). That means the DM & Comment API for receiving DMs (`POST /webhooks/boxapi`) and sending replies, the Instagram Data API for posts, post owners and profiles, and the AI API for the Jev models. We have no Meta app, App Review, Graph token or token refresh. Apify and cost/budget tracking are gone. Don't add them back. The backend is hosted outside Iran, so use BoxAPI's non-Iran hosts.
-- **Secrets** live in `backend/.env` (template: `backend/.env.example`) or encrypted in MongoDB. Never commit them or log them. BoxAPI uses `BOXAPI_INSTAGRAM_DM_TOKEN`, `BOXAPI_INSTAGRAM_TOKEN`, `BOXAPI_AI_TOKEN` and `BOXAPI_WEBHOOK_SECRET`.
+- **Secrets** live in `backend/.env` and `web/.env` (templates: `.env.example` in each) or encrypted in MongoDB. Never commit them or log them. BoxAPI uses `BOXAPI_INSTAGRAM_DM_TOKEN`, `BOXAPI_INSTAGRAM_TOKEN`, `BOXAPI_AI_TOKEN` and `BOXAPI_WEBHOOK_SECRET`.
 - **Persian first:** `dir="rtl"` and Persian copy by default. Handles, URLs, emails and phone numbers are shown `dir="ltr"`.
 - **Design tokens only:** components use semantic token classes (`bg-surface`, `text-ink`, ...), never raw Tailwind palette colours.
 - Match the surrounding code: short header comment naming the PRD section, small modules, `.js` import extensions in the backend.

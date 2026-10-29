@@ -19,8 +19,9 @@
     "build": "npm run build -w admin && npm run build -w web && npm run build -w backend",
     "start": "npm run start -w backend",
     "worker": "npm run worker -w backend",
+    "start:web": "npm run start -w web",
     "typecheck": "npm run typecheck -w backend",
-    "test": "npm run test -w backend",
+    "test": "npm run test -w backend && npm run test -w web",
     "admin:import": "npm run admin:import -w backend --",
     "admin:create": "npm run admin:create -w backend --"
   }
