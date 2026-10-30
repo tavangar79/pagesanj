@@ -15,7 +15,7 @@ A standalone backend service, built with Node.js, Express and MongoDB, that does
 2. **Daily reviewer-page check.** Once a day, BoxAPI's Instagram Data API pulls new posts from reviewer pages we follow (e.g. `@sadegh.delicious`). Each new post becomes a **pending review** on the shop the post tags.
 3. **Bilingual landing page (EN/FA).** A public site with the pages Meta needs to approve the app (privacy policy, terms, data deletion).
 
-Admins approve the pending reviews and work through the wishlist in a small, password-protected admin panel with its own JSON API on the backend.
+Admins approve the pending reviews (clear reviews from trusted reviewer pages publish on their own) and work through the wishlist in a small, password-protected admin panel with its own JSON API on the backend.
 
 The full public website (shop pages, search) is **out of scope**. It comes a few months later and will read the same data.
 
@@ -41,7 +41,7 @@ The full public website (shop pages, search) is **out of scope**. It comes a few
 - Comments and story mentions, even though Meta's webhooks offer them.
 
 **Anti-goals (a failure even if it technically works)**
-- Publishing anything without an admin's approval.
+- Publishing anything without an admin's approval, except clear reviews from a reviewer page an admin has marked as trusted. Unclear posts from those pages still go to a person.
 - Logging into Instagram with pagesanj's username and password, or calling Instagram from pagesanj's account any way other than BoxAPI's official DM API, which risks a ban on pagesanj's account. (BoxAPI's Data API reads public data without touching our account, so it's allowed.)
 - Replying with a wrong shop, for example the shop tagged in a post instead of the post's author (see §5.2).
 - Leaking secrets such as tokens, or storing more personal data about the people who DM us than the bot needs.
@@ -117,9 +117,9 @@ The full public website (shop pages, search) is **out of scope**. It comes a few
 Every shop has a profile image, and has the contact details its own Instagram page shows.
 
 - **When:** when a shop is created (by an admin, or by promoting a wishlist entry), and when an admin presses **refresh profile**. Not on every DM and not daily.
-- **How:** one BoxAPI Data API `user/get_info_by_username` call for the shop's handle. Fields (checked against a real response): `body.user` with `hd_profile_pic_url_info.url` (else `profile_pic_url`), `external_url` / `bio_links[].url`, `public_email` and `contact_phone_number` (else `public_phone_country_code` + `public_phone_number`).
+- **How:** one BoxAPI Data API `user/get_info_by_username` call for the shop's handle. Fields (checked against a real response): `body.user` with `hd_profile_pic_url_info.url` (else `profile_pic_url`), `external_url` / `bio_links[].url`, `public_email` and `contact_phone_number` (else `public_phone_country_code` + `public_phone_number`, else the first full number written in `biography`).
 - **Image:** download it straight away (the Instagram link expires), check that it's a real JPEG, PNG or WebP of at most 2 MB, and store it in `shopImages`. If the fetch fails, the admin must upload an image before the shop can be saved.
-- **Contact details:** copy only what the page itself publishes. Normalise the email (lowercase), the website (full `https://` URL) and the phone (international form). The admin can correct or clear a field, and can add one the page shows but the scrape missed (e.g. a number written in the bio). Nothing is taken from other sources, such as reviewer posts or DMs.
+- **Contact details:** copy only what the page itself publishes. Normalise the email (lowercase), the website (full `https://` URL) and the phone (international form). The admin can correct or clear a field, and can add one the page shows but the scrape missed. A phone read from the bio is a best guess, so the admin checks it before saving. Nothing is taken from other sources, such as reviewer posts or DMs.
 - **Refresh:** a refresh replaces the image (if it changed) and the contact fields, and sets `profileFetchedAt`. A field the page no longer shows is cleared.
 - **Not the same as pagesanj's sensitive identifiers.** pagesanj keeps phone numbers it collects as evidence encrypted and never public. The `contact.phone` here is different: it's the number the shop itself advertises on its page, so it's public by nature. Never copy a phone number into `contact` from anywhere but the shop's own page.
 
@@ -265,7 +265,7 @@ A category in use by any shop can't be deleted; the admin must move those shops 
 | `direction?` | enum: `positive \| negative \| mixed` | Overall tone of the review. Set by the admin; required to publish. |
 | `summary?` | string | One-line admin-written summary, shown in DM replies. |
 | `rejectReason?` | string | Why the admin rejected it, e.g. "not a review", "ad". |
-| `publishedAt?` | date | When the admin approved it. |
+| `publishedAt?` | date | When the admin approved it, or when it was auto-published from a trusted page. |
 
 ### `wishlist`: pages people asked about that we haven't reviewed yet
 
@@ -381,7 +381,7 @@ We have **no Meta app of our own**: no App Review, no Graph API token and no tok
 3. **Tokens** in `backend/.env`: `BOXAPI_INSTAGRAM_DM_TOKEN` (DM & Comment API, header `X-Api-Key`), `BOXAPI_INSTAGRAM_TOKEN` (Instagram Data API, Bearer), `BOXAPI_AI_TOKEN` (AI API, Bearer, e.g. the `typesafe/jev-*` models).
 4. **Send API:** `POST https://api.sendbox.chat/api/v1/service/actions/send_message` (SendBox, BoxAPI's DM service outside Iran; `BOXAPI_DM_BASE_URL`) with `{ account_id, recipient_id, message }`. `account_id` is the connected page's UUID, and `recipient_id` is the webhook's `sender.id`.
 5. **BoxAPI rules:** message only people who messaged or commented first. No bulk or unsolicited messages (BoxAPI closes accounts for spam).
-6. **Hosting:** the backend runs **outside Iran**, so the DM API uses `https://api.sendbox.chat/api/v1`, the Data API uses `https://instagram.boxpi.ir` and the AI API uses `https://ai.boxpi.ir`. Some Data API tokens are only accepted on `https://boxapi.ir`; set `BOXAPI_INSTAGRAM_BASE_URL` for that.
+6. **Hosting:** the backend runs **outside Iran**, so the DM API uses `https://api.sendbox.chat/api/v1`, the Data API uses `https://instagram.boxpi.ir` and the AI API uses `https://ai.boxapi.ir/ai/v1` (`ai.boxpi.ir` rejects our key). Some Data API tokens are only accepted on `https://boxapi.ir`; set `BOXAPI_INSTAGRAM_BASE_URL` for that.
 7. **Fallback:** keep the lookup logic in a function that doesn't depend on the transport.
 
 ## 11. Tech stack and architecture

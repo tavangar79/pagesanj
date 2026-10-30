@@ -157,7 +157,7 @@ flowchart TD
 
 - One failing source (for example a renamed page) is counted in `sourceErrors` and doesn't stop the others. The job fails only if every source fails.
 - Every run writes a `jobRuns` row with its counts. The admin Jobs page shows those rows next to the BoxAPI request quota (`GET /api/my`).
-- Nothing is published without an admin's approval. Outcome and direction are never guessed.
+- Nothing is published without an admin's approval, except clear reviews from trusted reviewer pages (planned, see `docs/superpowers/specs/2026-10-30-trusted-reviewers-design.md`). Admins never have outcome and direction guessed for them outside that flow.
 
 Code: `services/reviewerPosts.ts`, `services/reviews.ts`, `boxapi/posts.ts`, `queues/workers/reviewer{Daily,Backfill}.worker.ts`, `queues/schedulers.ts`.
 
@@ -261,7 +261,7 @@ Backend config goes through `backend/src/config/env.ts`; the template is `backen
 | `BOXAPI_WEBHOOK_SECRET` | Checking webhook signatures. Until it's set, every webhook is rejected. |
 | `BOXAPI_INSTAGRAM_TOKEN` | Data API (Bearer): posts, post owners, profiles, quota. |
 | `BOXAPI_INSTAGRAM_BASE_URL` | Data API host. Defaults to `https://instagram.boxpi.ir`; **set it to `https://boxapi.ir`**, because our current token is only accepted there. |
-| `BOXAPI_AI_TOKEN` | AI API (Jev models). Not used yet. |
+| `BOXAPI_AI_TOKEN` | AI API (Jev models), host `https://ai.boxapi.ir/ai/v1`; `ai.boxpi.ir` rejects our key. Not used yet. |
 | `REVIEW_IGNORE_HANDLES` | Tagged handles that aren't shops (sponsors). |
 | `DAILY_CHECK_CRON` | Daily check time (default `0 9 * * *`, Asia/Tehran). |
 | `SESSION_SECRET`, `DATA_ENCRYPTION_KEY` | Admin sessions; encryption key shared with pagesanj. |

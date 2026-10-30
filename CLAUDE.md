@@ -29,7 +29,7 @@ This root repo uses one branch, `master`. Each folder is a **git submodule** wit
 
 ## Rules that apply everywhere
 
-- **Never publish without an admin's approval**, never log into Instagram with a password, and always reply about the post's *author*, not tagged accounts (PRD §3, §5.2).
+- **Never publish without an admin's approval**, except clear reviews from a reviewer page an admin marked as trusted (design: `docs/superpowers/specs/2026-10-30-trusted-reviewers-design.md`). Never log into Instagram with a password, and always reply about the post's *author*, not tagged accounts (PRD §3, §5.2).
 - **Instagram and AI go through BoxAPI only** (boxapi.ir, PRD §10; use the `boxapi` skill). That means the DM & Comment API for receiving DMs (`POST /webhooks/boxapi`) and sending replies, the Instagram Data API for posts, post owners and profiles, and the AI API for the Jev models. We have no Meta app, App Review, Graph token or token refresh. Apify and cost/budget tracking are gone. Don't add them back. The backend is hosted outside Iran, so use BoxAPI's non-Iran hosts.
 - **Secrets** live in `backend/.env` and `web/.env` (templates: `.env.example` in each) or encrypted in MongoDB. Never commit them or log them. BoxAPI uses `BOXAPI_INSTAGRAM_DM_TOKEN`, `BOXAPI_INSTAGRAM_TOKEN`, `BOXAPI_AI_TOKEN` and `BOXAPI_WEBHOOK_SECRET`.
 - **Persian first:** `dir="rtl"` and Persian copy by default. Handles, URLs, emails and phone numbers are shown `dir="ltr"`.
