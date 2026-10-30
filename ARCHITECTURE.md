@@ -1,11 +1,11 @@
 # How pagesanj works
 
-A snapshot of the system as of 2026-10-29, after the BoxAPI migration (PRD §14 M5). The spec is `PRD.md`; this file is the map.
+A snapshot of the system as of 2026-10-30, after the BoxAPI migration (PRD §14 M5) and trusted reviewer pages (PRD §6.4). The spec is `PRD.md`; this file is the map.
 
 pagesanj does three things:
 
 1. **DM bot.** Someone sends our Instagram account a shop's page, post or `@handle`, and the bot replies with what we know about that shop.
-2. **Daily reviewer check.** Every morning we read new posts from reviewer pages we follow. Each shop tagged in a post becomes a **pending review**, and an admin approves or rejects it.
+2. **Daily reviewer check.** Every morning we read new posts from reviewer pages we follow. Each shop tagged in a post becomes a **pending review**, and an admin approves or rejects it. Posts of **trusted** pages are checked by an AI model instead and clear ones publish on their own.
 3. **Website and admin panel.** A public bilingual (fa/en) site, and an admin panel where all moderation happens.
 
 Instagram and AI are reached **only through BoxAPI** (boxapi.ir). We have no Meta app, no Graph API token and no scraper.
@@ -21,6 +21,7 @@ flowchart LR
   subgraph BoxAPI["BoxAPI (boxapi.ir)"]
     dmapi["DM & Comment API (SendBox)<br/>api.sendbox.chat/api/v1<br/>webhook + send_message"]
     dataapi["Instagram Data API<br/>posts · post info · profiles · quota"]
+    aiapi["AI API<br/>ai.boxapi.ir/ai/v1<br/>chat completions"]
   end
 
   subgraph web["Backend web process (npm run dev / start)<br/>Express API :3000"]
@@ -40,6 +41,8 @@ flowchart LR
     q4[[reviewer-daily]]
     q5[[reviewer-backfill]]
     q6[[shop-profile]]
+    q7[[ai]]
+    q8[[post-publish]]
   end
 
   subgraph worker["Worker process (npm run dev:worker / worker)"]
@@ -52,7 +55,8 @@ flowchart LR
   user -- DM --> dmapi
   dmapi -- signed webhook --> wh
   wh --> q1
-  q1 & q2 & q3 & q4 & q5 & q6 --> w
+  q1 & q2 & q3 & q4 & q5 & q6 & q7 & q8 --> w
+  w -- classify trusted posts --> aiapi
   w --> bot
   w -- send_message --> dmapi
   dmapi -- reply --> user
@@ -157,9 +161,38 @@ flowchart TD
 
 - One failing source (for example a renamed page) is counted in `sourceErrors` and doesn't stop the others. The job fails only if every source fails.
 - Every run writes a `jobRuns` row with its counts. The admin Jobs page shows those rows next to the BoxAPI request quota (`GET /api/my`).
-- Nothing is published without an admin's approval, except clear reviews from trusted reviewer pages (planned, see `docs/superpowers/specs/2026-10-30-trusted-reviewers-design.md`). Admins never have outcome and direction guessed for them outside that flow.
+- Nothing is published without an admin's approval, except clear reviews from trusted reviewer pages (next section). Admins never have outcome and direction guessed for them outside that flow.
 
 Code: `services/reviewerPosts.ts`, `services/reviews.ts`, `boxapi/posts.ts`, `queues/workers/reviewer{Daily,Backfill}.worker.ts`, `queues/schedulers.ts`.
+
+### Trusted reviewer pages
+
+A reviewer source with `trusted: true` skips the pending-review path above. Every post (tagged or not) is stored as a `postChecks` row and goes through two queues (PRD §6.4):
+
+```mermaid
+flowchart TD
+  ING["ingestPosts (trusted source)"] --> PC["postChecks row: queued<br/>unique per source + shortcode"]
+  PC --> AI[[ai queue<br/>1 job at a time, 20 a minute]]
+  AI -->|"caption → strict JSON<br/>(AI API, AI_REVIEW_MODEL)"| CL[classified]
+  CL --> PP[[post-publish queue<br/>1 job at a time]]
+  PP --> GATE{"gate:<br/>review? one shop? confidence ≥ 0.8?<br/>evidence? not paid? scam consistent?"}
+  GATE -->|any rule fails| NP["needs_person<br/>reasons stored<br/>wishlist demand +1"]
+  GATE -->|all pass| SH["find shop by handle,<br/>or create it from the profile<br/>(image, contact, bio phone, category)"]
+  SH -->|profile missing, private, no image| NP
+  SH --> REV["published review<br/>autoPublished = true"]
+  REV -->|scam claim| TAG["tag scammer"]
+  REV & TAG --> ST["shop status derived<br/>from published reviews"]
+  NP --> ADM["Admin: person check<br/>publish, dismiss or run the AI again"]
+  ADM --> REV
+```
+
+- **The gate is pure** (`services/postGate.ts`): it collects every failed rule so the admin sees all the reasons. `services/postPublish.ts` adds `source_not_trusted`, `review_pending` and `review_rejected`, and does the shop, review, tag and status steps. Each step can run again, so a crashed job retries from the top.
+- **Shop status** (`services/shopStatus.ts`): all published reviews positive is `recommended`, all negative `warning`, a mix `mixed`, and the tag `scammer` always `serious_warning`. A shop with no published review and no `scammer` tag goes back to `no_known_issues`. A hand-set status (`statusManual`) is kept, except that `scammer` still wins.
+- **Auto-created shops** (`services/autoShops.ts`) reuse the profile fetch of section 4 and keep a phone read from the bio. They are marked `autoCreated`; the admin action **not a shop** removes one and adds its handle to `ignoredHandles`, which the gate reads together with `REVIEW_IGNORE_HANDLES`.
+- **Failures:** 429, 5xx, quota and network errors retry (8 attempts, exponential backoff from 60 s) and the row stays queued with `lastError`. Only a real not-found, private or no-image result goes to a person.
+- Posts from sources that aren't trusted never reach the AI.
+
+Code: `services/postChecks.ts`, `services/postClassify.ts`, `services/postGate.ts`, `services/postPublish.ts`, `services/autoShops.ts`, `services/shopStatus.ts`, `boxapi/ai.ts`, `queues/workers/{ai,postPublish}.worker.ts`, `routes/admin/postChecks.ts`.
 
 ## 4. Shop profile fetch
 
@@ -199,20 +232,24 @@ erDiagram
   SHOP ||--o{ REVIEW : "has"
   WISHLIST ||--o{ REVIEW : "pending until promoted"
   REVIEWER_SOURCE ||--o{ REVIEW : "posted"
+  REVIEWER_SOURCE ||--o{ POST_CHECK : "trusted posts"
+  POST_CHECK |o--o{ REVIEW : "published as"
   SHOP }o--o{ CATEGORY : "in"
   SHOP ||--|| SHOP_IMAGE : "profile image"
   WISHLIST |o--o| SHOP : "promoted to"
 
   SHOP {
     string handle "plus previousHandles"
-    string status
+    string status "derived from reviews unless statusManual"
     string contact "email, website, phone"
+    bool autoCreated
   }
   REVIEW {
     string postShortcode
     string status "pending, published, rejected"
     string outcome
     string direction
+    bool autoPublished
     object raw "full Data API item"
   }
   WISHLIST {
@@ -225,6 +262,13 @@ erDiagram
     bool follow
     int backfillLimit
     date lastSeenPostAt
+    bool trusted
+  }
+  POST_CHECK {
+    string postShortcode
+    string status "queued, classified, needs_person, published, dismissed"
+    string reasons "why a person must look"
+    object analysis "validated AI answer"
   }
   POST_OWNER {
     string shortcode
@@ -242,11 +286,11 @@ erDiagram
   }
 ```
 
-Also `admins` and `loginAttempts` (admin login with TOTP, same formats as pagesanj) and `deletionRequests`.
+Also `ignoredHandles` (accounts the gate never publishes about), `admins` and `loginAttempts` (admin login with TOTP, same formats as pagesanj) and `deletionRequests`.
 
 ## 6. Admin panel and website
 
-- **Admin** (`admin/`, Vite + React at `/admin`, served by its own nginx image that proxies `/admin/api` and `/admin/queues` to the backend). The screens are pending reviews, wishlist, shops, categories, reviewer sources and jobs. Login needs a password plus a TOTP code, and every write needs a CSRF token. Bull Board is at `/admin/queues`.
+- **Admin** (`admin/`, Vite + React at `/admin`, served by its own nginx image that proxies `/admin/api` and `/admin/queues` to the backend). The screens are pending reviews, person check (posts of trusted pages the gate held), wishlist, shops, categories, reviewer sources and jobs. Login needs a password plus a TOTP code, and every write needs a CSRF token. Bull Board is at `/admin/queues`.
 - **Website** (`web/`, Vite + React SSR, rendered by its own server `web/server.js` at `/`; it asks the backend only for deletion statuses). It has the landing page and the legal pages Meta requires (`/privacy`, `/terms`, `/data-deletion` plus a deletion-status lookup), in fa (RTL, the default) and en.
 
 ## 7. Configuration
@@ -261,10 +305,15 @@ Backend config goes through `backend/src/config/env.ts`; the template is `backen
 | `BOXAPI_WEBHOOK_SECRET` | Checking webhook signatures. Until it's set, every webhook is rejected. |
 | `BOXAPI_INSTAGRAM_TOKEN` | Data API (Bearer): posts, post owners, profiles, quota. |
 | `BOXAPI_INSTAGRAM_BASE_URL` | Data API host. Defaults to `https://instagram.boxpi.ir`; **set it to `https://boxapi.ir`**, because our current token is only accepted there. |
-| `BOXAPI_AI_TOKEN` | AI API (Jev models), host `https://ai.boxapi.ir/ai/v1`; `ai.boxpi.ir` rejects our key. Not used yet. |
-| `REVIEW_IGNORE_HANDLES` | Tagged handles that aren't shops (sponsors). |
+| `BOXAPI_AI_TOKEN` | AI API (Bearer), host `https://ai.boxapi.ir/ai/v1`; `ai.boxpi.ir` rejects our key. Used to classify posts of trusted reviewer pages. |
+| `BOXAPI_AI_BASE_URL` | AI API host. Defaults to `https://ai.boxapi.ir/ai/v1`. |
+| `AI_REVIEW_MODEL` | Model that classifies trusted posts (default `openai/gpt-6-luna`). Changing it needs no code change. |
+| `AI_PUBLISH_MIN_CONFIDENCE` | Lowest AI confidence that can auto-publish (default `0.8`). |
+| `REVIEW_IGNORE_HANDLES` | Tagged handles that aren't shops (sponsors). Also applies to handles the AI names; the `ignoredHandles` collection adds to it. |
 | `DAILY_CHECK_CRON` | Daily check time (default `0 9 * * *`, Asia/Tehran). |
 | `SESSION_SECRET`, `DATA_ENCRYPTION_KEY` | Admin sessions; encryption key shared with pagesanj. |
+
+> **AI key limits:** one request at a time and 20 a minute, so the `ai` queue runs one job at a time with a 20 a minute limiter. `GET /ai/v1/me` shows the key's own credit.
 
 > **Quota:** the BoxAPI Data API plan is small (10 requests a month at the time of writing). Each backfill page, daily-check page, post-owner lookup and profile fetch uses one request. The Jobs page shows what's left.
 
@@ -273,13 +322,15 @@ Backend config goes through `backend/src/config/env.ts`; the template is `backen
 ```bash
 npm install
 npm run dev          # web process  → http://localhost:3000
-npm run dev:worker   # worker process (needed for replies, lookups, daily check)
+npm run dev:worker   # worker process (needed for replies, lookups, daily check, trusted-post AI)
 npm run dev:admin    # admin panel dev server
 npm run dev:web      # website dev server
 npm test             # backend tests (vitest, in-memory MongoDB) and website server tests
 
 docker compose up -d --build   # backend :3000, worker, web :3001, admin :8080, MongoDB, Redis
 ```
+
+On a network where Node can't reach Instagram's CDN directly (the profile image download), start the worker with `NODE_USE_ENV_PROXY=1` and a `NO_PROXY` that covers the BoxAPI hosts, so only the CDN goes through the proxy.
 
 ## 9. Deploying on Hamravesh (Kubernetes)
 

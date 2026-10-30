@@ -37,7 +37,7 @@ The full public website (shop pages, search) is **out of scope**. It comes a few
 - The public website, search, and shop pages.
 - User accounts, or reviews submitted by users.
 - Messaging people first (outbound DMs), broadcasts or marketing messages.
-- Automatically deciding whether a review is positive or negative. An admin decides.
+- Automatically deciding whether a review is positive or negative, except for trusted reviewer pages (§6.4). For every other page an admin decides.
 - Comments and story mentions, even though Meta's webhooks offer them.
 
 **Anti-goals (a failure even if it technically works)**
@@ -99,6 +99,7 @@ The full public website (shop pages, search) is **out of scope**. It comes a few
 - **Review posts:** up to 3–5 **published** reviews, newest first. Each one shows the reviewer handle, date, a one-line summary and the Instagram post link. Add "+N more" if there are more.
 - **Link: not in v1 (decided).** There's no website yet, so the reply has no link to our site. It will be added once the website exists. Keep the reply builder ready to take an optional link later, but don't add the setting now.
 - If the shop exists but has **no published reviews yet**, say "on our list, not reviewed yet" and don't show any tags.
+- **Disclaimer:** every reply that lists reviews ends with a closing line in the reply's language saying the answer is for information only and buying is the user's own responsibility (`disclaimer` in `src/i18n`). It goes after the last part's content, so it is always the end of the reply, and the 950-character split still holds.
 
 **Not found:** "We haven't reviewed this page yet. We've added it to our review list." The wording follows the existing pagesanj copy: «اگر تجربه‌ای از خرید از این پیج دارید یا می‌خواهید بررسی شود…»
 
@@ -116,11 +117,12 @@ The full public website (shop pages, search) is **out of scope**. It comes a few
 
 Every shop has a profile image, and has the contact details its own Instagram page shows.
 
-- **When:** when a shop is created (by an admin, or by promoting a wishlist entry), and when an admin presses **refresh profile**. Not on every DM and not daily.
+- **When:** when a shop is created (by an admin, by promoting a wishlist entry, or automatically from a trusted reviewer post, §6.4), and when an admin presses **refresh profile**. Not on every DM and not daily.
 - **How:** one BoxAPI Data API `user/get_info_by_username` call for the shop's handle. Fields (checked against a real response): `body.user` with `hd_profile_pic_url_info.url` (else `profile_pic_url`), `external_url` / `bio_links[].url`, `public_email` and `contact_phone_number` (else `public_phone_country_code` + `public_phone_number`, else the first full number written in `biography`).
 - **Image:** download it straight away (the Instagram link expires), check that it's a real JPEG, PNG or WebP of at most 2 MB, and store it in `shopImages`. If the fetch fails, the admin must upload an image before the shop can be saved.
 - **Contact details:** copy only what the page itself publishes. Normalise the email (lowercase), the website (full `https://` URL) and the phone (international form). The admin can correct or clear a field, and can add one the page shows but the scrape missed. A phone read from the bio is a best guess, so the admin checks it before saving. Nothing is taken from other sources, such as reviewer posts or DMs.
 - **Refresh:** a refresh replaces the image (if it changed) and the contact fields, and sets `profileFetchedAt`. A field the page no longer shows is cleared.
+- **Auto-created shops** (§6.4) keep a phone read from the bio too. There is no admin check before saving, but it is the shop's own published number. A shop is never created without an image: the post goes to a person instead.
 - **Not the same as pagesanj's sensitive identifiers.** pagesanj keeps phone numbers it collects as evidence encrypted and never public. The `contact.phone` here is different: it's the number the shop itself advertises on its page, so it's public by nature. Never copy a phone number into `contact` from anywhere but the shop's own page.
 
 ## 6. Feature 2: Daily reviewer-page check (BoxAPI Data API)
@@ -137,6 +139,8 @@ Every shop has a profile image, and has the contact details its own Instagram pa
 5. Update the source's `lastSeenShortcode` and `lastSeenPostAt`. **Ignore pinned posts (`isPinned`) when computing "newest"**, because pinned posts appear first regardless of date.
 6. Save a `jobRuns` record: posts fetched, reviews created, errors.
 
+**Trusted sources** (`trusted: true`) take a different path for step 4: every post is stored as a `postChecks` row, tagged or not, and goes to the AI queue (§6.4). Sources that aren't trusted keep the flow above unchanged.
+
 ### 6.2 BoxAPI Data API details
 
 - **Endpoint:** `POST https://instagram.boxpi.ir/api/instagram/user/get_media_by_username` (host for servers outside Iran) with `Authorization: Bearer <BOXAPI_INSTAGRAM_TOKEN>` and body `{"username": "sadegh.delicious", "count": 12, "max_id"?: "<next_max_id>"}`. One call per source; at most 12 posts per call.
@@ -149,6 +153,29 @@ Every shop has a profile image, and has the contact details its own Instagram pa
 - **The tagged shop doesn't exist:** *(builder's call, revisit if wrong)* create or increment a **wishlist** entry with `source: reviewer_post` and attach the pending review to that entry. When an admin promotes the entry to a shop, its pending reviews move to the new shop.
 - **Uniqueness:** only one live (pending or published) review per (shop or wishlist entry, `postShortcode`). Enforce it with a unique partial index, as pagesanj does.
 - **Outcome and direction aren't guessed.** A scraped post doesn't reliably say whether the experience was good. Pending reviews leave `outcome` and `direction` empty, and **the admin must set both before approving.** `paidPartnership: true` is shown to the admin as a warning.
+
+### 6.4 Trusted reviewer pages: AI check and auto-publish
+
+An admin can mark a reviewer source as **trusted** (§8 `reviewerSources.trusted`). Only these sources use this flow; spec: `docs/superpowers/specs/2026-10-30-trusted-reviewers-design.md`.
+
+1. **Intake.** The daily check and backfill store each post as a `postChecks` row (status `queued`, unique per source and shortcode) and add a job to the `ai` queue. No post is dropped: each ends up published, `needs_person`, `dismissed`, or a duplicate.
+2. **AI step (`ai` queue).** One request reads the caption text only (no images or video) and returns strict JSON: `is_review`, `shops[{handle, role}]` (role `reviewed_shop` or `other`), `direction`, `outcome`, `summary`, `category`, `scam_claim`, `has_evidence`, `confidence`. The model is `AI_REVIEW_MODEL`; the reply is validated with zod. Captions are untrusted data: the output is only used through the schema and the gate. The row becomes `classified` and a job goes to the `post-publish` queue.
+3. **Gate (`post-publish` queue).** A post is published only if all of these hold, and every failed rule is stored in `postChecks.reasons`:
+   - `is_review` is true, and exactly one shop has role `reviewed_shop` (`not_review`, `no_shop`, `several_shops`);
+   - the handle is valid, appears in the caption or tags, and isn't on the ignore list (`invalid_handle`, `handle_not_in_post`, `ignored_handle`). The ignore list is `REVIEW_IGNORE_HANDLES`, the `ignoredHandles` collection and the reviewer's own handle. A handle written only as text in the caption is allowed, because a shop may have blocked the reviewer from tagging it;
+   - confidence is at least `AI_PUBLISH_MIN_CONFIDENCE` (default 0.8) (`low_confidence`);
+   - `has_evidence`: the caption makes at least one concrete statement about the product, delivery or service (`no_evidence`);
+   - not a paid partnership (`paid_partnership`);
+   - `direction` isn't `none` (`direction_none`); `outcome` isn't `none`, unless `scam_claim` is true, which stores `scam_reported` (`outcome_none`);
+   - a scam claim must have `direction: negative` (`scam_contradiction`);
+   - the source is still trusted when the gate runs (`source_not_trusted`).
+   Two more reasons come from the later steps: `review_rejected` (an admin already took down a review of this post, so it stays down) and `review_pending` (a pending review of the post already exists, which is the admin's to decide).
+4. **Shop.** The shop is found by handle or `previousHandles`, else created from the Data API profile (image, contact, phone from the bio), with a category: the model picks from the admin's list, or proposes a short name that is created on the spot. An open wishlist entry for the handle is promoted and its reviews move to the shop (they stay pending). A profile that isn't found, is private, or has no usable image, and a handle an admin dismissed, hold the post for a person.
+5. **Publish.** The review is created `published` with `autoPublished: true`, and a scam claim gives the shop the tag `scammer`. Rejecting a scam review later keeps the tag and status until an admin changes them on the shop.
+6. **Held posts.** Everything else becomes `needs_person` with the model's suggestion and the reasons, and counts towards wishlist demand for the handle. In the admin the person can edit outcome, direction and summary and publish (which also creates the category and applies a scam claim), dismiss it, or send it through the AI step again.
+7. **Failures.** 429, 5xx, quota and network errors retry and the row stays queued; a final failure leaves `lastError` for the admin (the "failed" filter). Only a real not-found, private or no-image result goes to a person. A 4xx from BoxAPI is not retried.
+8. **Queues.** `ai` runs one job at a time and at most 20 a minute, which are the AI key's limits. `post-publish` runs one job at a time, so two posts about a new shop can't both create it. Both use 8 attempts with an exponential backoff starting at 60,000 ms.
+9. **Shop status** follows the published reviews (§8). An auto-created page that turns out not to be a business is removed with the admin action **not a shop** (§9.2). It works only on auto-created shops with no hand-approved published review. It rejects the shop's pending and auto-published reviews (`rejectReason: not_a_shop`), dismisses the wishlist entry, and adds the handle to `ignoredHandles` so the next post can't create it again.
 
 ## 7. Feature 3: Landing page (EN/FA)
 
@@ -203,9 +230,11 @@ In the tables below, `?` marks an optional field. Unless a table says otherwise,
 | `displayName` | string | Shop name shown in replies and in the admin panel. |
 | `handle` | string, unique | The shop's current Instagram handle; the main lookup key for DMs. |
 | `previousHandles` | string[] | Old handles after a rename. Lookups check these too, so an old handle still finds the shop. |
-| `status` | enum: `serious_warning \| warning \| mixed \| recommended \| no_known_issues` | Overall trust verdict (same values as pagesanj). Shown as the status label in replies. |
-| `tags` | string[] | Admin-defined labels, e.g. "slow delivery" or "good packaging", shown in replies. |
-| `categoryIds` | ObjectId[] → `categories` | What the shop sells, picked from the admin-managed category list. Never free text. |
+| `status` | enum: `serious_warning \| warning \| mixed \| recommended \| no_known_issues` | Overall trust verdict (same values as pagesanj). Shown as the status label in replies. **Derived** from the shop's published reviews unless `statusManual` is set: all positive `recommended`, all negative `warning`, a mix `mixed`, and the tag `scammer` always `serious_warning` (it wins even over a manual status). A shop with no published review and no `scammer` tag goes back to `no_known_issues`, unless `statusManual` is true. |
+| `statusManual` | boolean, default false | Set when an admin sets a status by hand: when a shop is created with a status other than `no_known_issues`, or when an edit changes the status. While set, reviews no longer change the status (the `scammer` tag still does). |
+| `autoCreated` | boolean, default false | The shop was created from a trusted reviewer post (§6.4). Only these can be removed with **not a shop**. |
+| `tags` | string[] | Admin-defined labels, e.g. "slow delivery" or "good packaging", shown in replies. The tag `scammer` is added automatically when a trusted page's published review claims a scam (§6.4). |
+| `categoryIds` | ObjectId[] → `categories` | What the shop sells. An admin picks from the category list. For a shop created from a trusted post the model picks one, or proposes a short name and the category is created automatically (§6.4), so the list is no longer admin-only. |
 | `bio?` | string | Short admin-written description, for the future website. |
 | `profileImage` | `{ imageId: ObjectId → shopImages, sha256, mime }`, required | The shop's profile picture. **Every shop has one.** We keep our own copy, because Instagram image links expire (§5.6). |
 | `contact` | `{ email?, website?, phone? }` | Contact details, **only the ones the shop shows on its own Instagram page** (business email, the link in its bio, a call button or a number in its bio). Each field is empty when the shop doesn't publish it. `email` is lowercased, `website` is a full `https://` URL, `phone` is stored in international form (`+98…`). |
@@ -220,7 +249,7 @@ In the tables below, `?` marks an optional field. Unless a table says otherwise,
 | `nameNormalized` | string, unique | `name` with Persian/Arabic letters and digits normalised (as pagesanj's `normalizeFa`), so the same category can't be added twice with different spellings. |
 | `slug` | string, unique | URL-safe ID for the future website's category pages. |
 
-A category in use by any shop can't be deleted; the admin must move those shops first.
+A category in use by any shop can't be deleted; the admin must move those shops first. Categories can also be created by the AI step (§6.4), matched on `nameNormalized` so a spelling variant reuses the existing one.
 
 ### `shopImages`: our copies of shop profile pictures
 
@@ -244,6 +273,8 @@ A category in use by any shop can't be deleted; the admin must move those shops 
 | `lastSeenShortcode?` | string | Shortcode of the newest (non-pinned) post we stored; the daily check's starting point. |
 | `lastSeenPostAt?` | date | Publish time of that post. |
 | `permission` | enum: `link_only \| screenshot \| embed`, default `link_only` | What the reviewer allows us to show: only a link, a screenshot, or an embedded post (as in pagesanj). |
+| `trusted` | boolean, default false | Posts of this page go through the AI check and can publish without an admin (§6.4). |
+| `profile?` | `{ sha256?, displayName?, biography?, postCount?, followerCount?, isPrivate?, fetchedAt? }` | The page's Instagram profile as the admin saw it when adding the source (§9.2). |
 
 ### `reviews`: one reviewer post about one shop
 
@@ -266,6 +297,29 @@ A category in use by any shop can't be deleted; the admin must move those shops 
 | `summary?` | string | One-line admin-written summary, shown in DM replies. |
 | `rejectReason?` | string | Why the admin rejected it, e.g. "not a review", "ad". |
 | `publishedAt?` | date | When the admin approved it, or when it was auto-published from a trusted page. |
+| `autoPublished` | boolean, default false | Published by the gate (§6.4) without an admin. |
+
+`outcome` also has `scam_reported`, for a scam post whose caption describes no purchase, so the data doesn't claim more than the caption says. A review rejected by the **not a shop** action has `rejectReason: not_a_shop` (§6.4).
+
+### `postChecks`: posts of trusted reviewer pages, from intake to publish (§6.4)
+
+| Field | Type | Description |
+|---|---|---|
+| `reviewerSourceId` | ObjectId → `reviewerSources` | The trusted page that posted it. |
+| `postShortcode` | string | Unique together with `reviewerSourceId`, so a post is stored once. |
+| `postUrl`, `occurredAt`, `caption`, `media`, `paidPartnership`, `raw` | as in `reviews` | Copied from the Data API item. |
+| `tagged` | string[] | Tagged handles (caption mentions and usertags), minus the reviewer. |
+| `status` | enum: `queued \| classified \| needs_person \| published \| dismissed` | `queued` waits for the AI, `classified` for the gate. |
+| `reasons` | string[] | Why the gate left the post for a person (§6.4). |
+| `analysis?` | object | The model's validated answer (§6.4 step 2). |
+| `lastError?` | string | The last failure of a job; a row still `queued` or `classified` with one has failed for good. |
+| `shopIds`, `reviewIds` | ObjectId[] | What the post produced. |
+
+### `ignoredHandles`: accounts the trusted-post gate never publishes about
+
+| Field | Type | Description |
+|---|---|---|
+| `handle` | string, unique | Normalised handle. Added by **not a shop**; read together with `REVIEW_IGNORE_HANDLES`. |
 
 ### `wishlist`: pages people asked about that we haven't reviewed yet
 
@@ -369,8 +423,9 @@ Login works exactly like pagesanj's admin login: **username + password + a 6-dig
 2. **Wishlist:** sorted by `requestCount`. Actions: **promote to shop** (creates the shop and moves attached pending reviews), **link to an existing shop** (adds to `previousHandles`, e.g. after a rename), or **dismiss**.
 3. **Shops:** create and edit (handle, previous handles, name, status, tags, categories, profile image, contact details). Categories are chosen from the list (screen 4), not typed. A new shop (including one promoted from the wishlist) starts with the profile fetch (§5.6), and the admin checks the result before saving: the image is required, and contact details stay empty unless the shop's page shows them. Actions: **upload a profile image** (replaces the fetched one), **refresh profile from Instagram**, and edit or clear each contact field.
 4. **Categories:** add, rename and delete categories (deleting only when no shop uses one), with the number of shops in each.
-5. **Reviewer sources:** add or edit, toggle follow, set the backfill limit, "run backfill now."
+5. **Reviewer sources:** add or edit, toggle follow, set the backfill limit, "run backfill now." Adding shows the page's Instagram profile first (picture, name, bio, post count, followers, and whether it is OK: exists, public, has posts; one Data API request) and has a **trusted** switch, also on the edit screen.
 6. **Jobs:** recent `jobRuns`, the Data API request quota (`GET /api/my`: used, limit, left, plan end), "run daily check now."
+7. **Person check:** the `postChecks` the gate held (`needs_person`), plus a "failed" filter. Each shows the post, the model's suggestion and the reasons. Actions: edit outcome, direction and summary and **publish** (a missing shop is created first with the shop form, image upload included; a post with several reviewed shops gets one review per shop), **dismiss**, or **run the AI again**. Published reviews show when they were auto-published. The Shops screen has **not a shop** for auto-created shops (§6.4).
 
 ## 10. Instagram setup (BoxAPI)
 
@@ -390,7 +445,7 @@ We have **no Meta app of our own**: no App Review, no Graph API token and no tok
 - **Language:** *builder's call:* TypeScript, run with `tsx` in development and compiled with `tsc` for production. This matches pagesanj and makes the later website share types.
 - **Validation:** zod (as in pagesanj). **Tests:** vitest with mongodb-memory-server (as in pagesanj).
 - **Queue:** **BullMQ** on **Redis**.
-  - Queues: `dm-inbound`, `post-owner`, `dm-send`, `reviewer-daily`, `reviewer-backfill`, `shop-profile` (shop profile fetch, §5.6).
+  - Queues: `dm-inbound`, `post-owner`, `dm-send`, `reviewer-daily`, `reviewer-backfill`, `shop-profile` (shop profile fetch, §5.6), `ai` (classify one trusted post, one job at a time, at most 20 a minute) and `post-publish` (the gate, one job at a time). The last two use 8 attempts with a 60,000 ms exponential backoff (§6.4).
   - Workers run in a separate process (`npm run worker`) from the Express web process, so the webhook stays fast.
 - **Scheduler:** BullMQ **job schedulers** (repeatable jobs), with the timezone set to `Asia/Tehran`, for the daily reviewer check (§6.1). Each job runs once even with several workers, so no separate lock is needed.
 - **Monitoring:** Bull Board mounted at `/admin/queues`, behind the admin login.
@@ -405,7 +460,7 @@ We have **no Meta app of our own**: no App Review, no Graph API token and no tok
   - `web/`: the public website React app (Vite, Tailwind), with the landing and legal pages (§7) and its own fa/en strings in `web/src/i18n/`. It has a client build (CSS, fonts, assets) and an SSR build (`web/dist/server/entry-server.js`, exporting `render(url, data)`). `web/server.js` (Express) calls `render` for every public route and passes in server data such as a deletion code's status, which it reads from the backend's `GET /api/deletion-status`. The future public website (shop pages, search) grows from this app.
 - **Admin UI:** React, Vite, Tailwind CSS v4, shadcn/ui, lucide-react icons. The design comes from the ui-ux-pro-max skill, starting from pagesanj's design tokens (§9).
 - **Website UI:** React, Vite, Tailwind CSS v4, server-rendered by `web/server.js` (§7.1). The design comes from the Taste skill and is written down in `web/DESIGN.md`.
-- **Configuration (environment variables):** `MONGODB_URI`, `REDIS_URL`, `BOXAPI_INSTAGRAM_DM_TOKEN`, `BOXAPI_INSTAGRAM_TOKEN`, `BOXAPI_AI_TOKEN`, `BOXAPI_WEBHOOK_SECRET`, `BOXAPI_DM_BASE_URL` and `BOXAPI_INSTAGRAM_BASE_URL` (optional), `REVIEW_IGNORE_HANDLES`, `DAILY_CHECK_CRON`, `SESSION_SECRET`, `DATA_ENCRYPTION_KEY` (**the same value as pagesanj's**, §9.1), `PAGESANJ_MONGODB_URI` (optional, read-only, only for `admin:import`), `PUBLIC_BASE_URL` (the website's URL, for the deletion-status link), `TRUST_PROXY` (true behind one trusted reverse proxy, so the login lockout sees the real client IP), `ADMIN_PASSWORD` (only for `admin:create`). The website has its own: `CONTACT_EMAIL` (shown on the legal pages, §7), `SITE_INSTAGRAM_HANDLE`, `COMPANY_NAME`, `API_URL` (the backend). The admin image has `BACKEND_URL`.
+- **Configuration (environment variables):** `MONGODB_URI`, `REDIS_URL`, `BOXAPI_INSTAGRAM_DM_TOKEN`, `BOXAPI_INSTAGRAM_TOKEN`, `BOXAPI_AI_TOKEN`, `BOXAPI_WEBHOOK_SECRET`, `BOXAPI_DM_BASE_URL` and `BOXAPI_INSTAGRAM_BASE_URL` (optional), `BOXAPI_AI_BASE_URL` (default `https://ai.boxapi.ir/ai/v1`), `AI_REVIEW_MODEL`, `AI_PUBLISH_MIN_CONFIDENCE` (default 0.8), `REVIEW_IGNORE_HANDLES`, `DAILY_CHECK_CRON`, `SESSION_SECRET`, `DATA_ENCRYPTION_KEY` (**the same value as pagesanj's**, §9.1), `PAGESANJ_MONGODB_URI` (optional, read-only, only for `admin:import`), `PUBLIC_BASE_URL` (the website's URL, for the deletion-status link), `TRUST_PROXY` (true behind one trusted reverse proxy, so the login lockout sees the real client IP), `ADMIN_PASSWORD` (only for `admin:create`). The website has its own: `CONTACT_EMAIL` (shown on the legal pages, §7), `SITE_INSTAGRAM_HANDLE`, `COMPANY_NAME`, `API_URL` (the backend). The admin image has `BACKEND_URL`.
 - **Hosting:** any Node host with HTTPS and a stable public URL, which the BoxAPI webhook requires. **Database:** MongoDB Atlas (free tier is enough for v1). **Redis:** a managed Redis (e.g. Upstash or Redis Cloud free tier), or Redis next to the app. Set `maxmemory-policy noeviction`, as BullMQ requires.
 - **Logging:** structured JSON logs with **pino** (`backend/src/lib/logger.ts`), `pino-http` for Express request logs, and `pino-pretty` in development only. Each worker uses a child logger carrying `{ queue, jobId }`. Never log tokens or full message bodies at info level: pino's `redact` option removes tokens, `signed_request`, `authorization` headers and message `text`. Message bodies are logged only at `debug`.
 
@@ -474,3 +529,13 @@ We have **no Meta app of our own**: no App Review, no Graph API token and no tok
 - The website gets `contactEmail` (from `CONTACT_EMAIL`) with every page's server data, for the legal pages.
 - The website also gets `instagramHandle` (`SITE_INSTAGRAM_HANDLE`, default `pagesanj`) and `companyName` (`COMPANY_NAME`, default the brand name) when set. The site brand is «پیج‌سنج» in Persian and "Pagesanj" in English.
 - Website legal copy commits to: DM requests and email deletion requests completed within 30 days; deletion via Instagram's *Apps and websites* runs as soon as the callback arrives; processing-queue messages removed within 7 days (§15 item 7). The site sets no cookies and loads no analytics.
+- **2026-10-30: trusted reviewer pages (§6.4).** Decided by the founder: trusted pages publish without an admin, unclear posts go to a person, a scam claim from a trusted page tags the shop `scammer`. The assistant's calls:
+  - The starting model is `openai/gpt-6-luna` (cheapest of those tried, best confidence spread on 6 real posts), set in `AI_REVIEW_MODEL`; it needs `max_completion_tokens`, so the client picks the token field per model. Token cap 1,500. The AI host is `https://ai.boxapi.ir/ai/v1`; `GET /ai/v1/me` shows the key's own credit. Jev decision models refuse our key, so a chat model is used.
+  - The gate (§6.4) has extra hold reasons beyond the spec: `scam_contradiction` (a scam claim whose direction isn't negative), `source_not_trusted` (the source lost its trust before the gate ran), `review_pending` and `review_rejected` (a review of the post already exists and is the admin's to decide, or was taken down).
+  - Shop status is derived from published reviews, with `statusManual` marking a hand-set status. A shop with no published review and no `scammer` tag resets to `no_known_issues`, so a takedown leaves no stale status; `createShop` sets `statusManual` for an explicit non-default status.
+  - Categories can be created by the AI step (this changes "never free text" in §8).
+  - A scam post with no purchase described is stored with the outcome `scam_reported`; rejecting it keeps the tag and `serious_warning` until an admin changes them.
+  - 429, 5xx, quota and network errors retry; only a real not-found, private or no-image result goes to a person. A 4xx from BoxAPI isn't retried.
+  - Auto-created shops keep a phone read from the bio (§5.6). **Not a shop** removes an auto-created shop and ignores its handle. Auto-creating a shop absorbs an open wishlist entry; a dismissed handle goes to a person.
+  - Posts from sources that aren't trusted keep the old flow. Existing pending reviews are left as they are; only posts ingested after this, or a forced backfill, use the new flow.
+  - Every reply with reviews ends with the responsibility line (§5.4).
