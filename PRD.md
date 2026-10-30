@@ -158,24 +158,27 @@ Every shop has a profile image, and has the contact details its own Instagram pa
 
 An admin can mark a reviewer source as **trusted** (§8 `reviewerSources.trusted`). Only these sources use this flow; spec: `docs/superpowers/specs/2026-10-30-trusted-reviewers-design.md`.
 
-1. **Intake.** The daily check and backfill store each post as a `postChecks` row (status `queued`, unique per source and shortcode) and add a job to the `ai` queue. No post is dropped: each ends up published, `needs_person`, `dismissed`, or a duplicate.
-2. **AI step (`ai` queue).** One request reads the caption text only (no images or video) and returns strict JSON: `is_review`, `shops[{handle, role}]` (role `reviewed_shop` or `other`), `direction`, `outcome`, `summary`, `category`, `scam_claim`, `has_evidence`, `confidence`. The model is `AI_REVIEW_MODEL`; the reply is validated with zod. Captions are untrusted data: the output is only used through the schema and the gate. The row becomes `classified` and a job goes to the `post-publish` queue.
+1. **Intake.** The daily check and backfill store each post as a `postChecks` row (status `queued`, unique per source and shortcode) and add a job to the `ai` queue. Each post ends up published, `needs_person`, `dismissed`, a duplicate, or on the "failed" filter (step 7). The one exception is a post with no timestamp, which Instagram should always send: it isn't stored, it counts as skipped, and its shortcode is logged at warn.
+2. **AI step (`ai` queue).** One request reads the caption text only (no images or video) and returns strict JSON: `is_review`, `shops[{handle, role}]` (role `reviewed_shop` or `other`), `direction`, `outcome`, `summary`, `category`, `scam_claim`, `has_evidence`, `confidence`. The model is `AI_REVIEW_MODEL`; the reply is validated with zod. The model isn't offered `scam_reported`: only the gate sets it. A `category` over 40 characters is ignored. Captions are untrusted data: the output is only used through the schema and the gate. The row becomes `classified` and a job goes to the `post-publish` queue.
 3. **Gate (`post-publish` queue).** A post is published only if all of these hold, and every failed rule is stored in `postChecks.reasons`:
    - `is_review` is true, and exactly one shop has role `reviewed_shop` (`not_review`, `no_shop`, `several_shops`);
-   - the handle is valid, appears in the caption or tags, and isn't on the ignore list (`invalid_handle`, `handle_not_in_post`, `ignored_handle`). The ignore list is `REVIEW_IGNORE_HANDLES`, the `ignoredHandles` collection and the reviewer's own handle. A handle written only as text in the caption is allowed, because a shop may have blocked the reviewer from tagging it;
+   - the handle is valid, appears in the caption or tags, and isn't on the ignore list (`invalid_handle`, `handle_not_in_post`, `ignored_handle`). The ignore list is `REVIEW_IGNORE_HANDLES`, the `ignoredHandles` collection and the handle of every reviewer source. A handle written only as text in the caption is allowed, because a shop may have blocked the reviewer from tagging it, but it must appear whole: `vebo` doesn't match `vebo.ir`, and `siamak` doesn't match `@siamak_kala`;
    - confidence is at least `AI_PUBLISH_MIN_CONFIDENCE` (default 0.8) (`low_confidence`);
    - `has_evidence`: the caption makes at least one concrete statement about the product, delivery or service (`no_evidence`);
    - not a paid partnership (`paid_partnership`);
    - `direction` isn't `none` (`direction_none`); `outcome` isn't `none`, unless `scam_claim` is true, which stores `scam_reported` (`outcome_none`);
-   - a scam claim must have `direction: negative` (`scam_contradiction`);
+   - a scam claim must have `direction: negative`, and `scam_reported` needs a scam claim (`scam_contradiction`);
+   - `positive` can't go with `not_delivered`, `return_refused` or `scam_reported` (`model_contradiction`);
+   - the summary isn't empty or over 500 characters (`bad_summary`);
    - the source is still trusted when the gate runs (`source_not_trusted`).
    Two more reasons come from the later steps: `review_rejected` (an admin already took down a review of this post, so it stays down) and `review_pending` (a pending review of the post already exists, which is the admin's to decide).
 4. **Shop.** The shop is found by handle or `previousHandles`, else created from the Data API profile (image, contact, phone from the bio), with a category: the model picks from the admin's list, or proposes a short name that is created on the spot. An open wishlist entry for the handle is promoted and its reviews move to the shop (they stay pending). A profile that isn't found, is private, or has no usable image, and a handle an admin dismissed, hold the post for a person.
 5. **Publish.** The review is created `published` with `autoPublished: true`, and a scam claim gives the shop the tag `scammer`. Rejecting a scam review later keeps the tag and status until an admin changes them on the shop.
-6. **Held posts.** Everything else becomes `needs_person` with the model's suggestion and the reasons, and counts towards wishlist demand for the handle. In the admin the person can edit outcome, direction and summary and publish (which also creates the category and applies a scam claim), dismiss it, or send it through the AI step again.
-7. **Failures.** 429, 5xx, quota and network errors retry and the row stays queued; a final failure leaves `lastError` for the admin (the "failed" filter). Only a real not-found, private or no-image result goes to a person. A 4xx from BoxAPI is not retried.
+6. **Held posts.** Everything else becomes `needs_person` with the model's suggestion and the reasons, and counts towards wishlist demand for the handle. In the admin the person can edit outcome, direction, summary and category and publish (which also creates the category and applies a scam claim), or dismiss it. A held post can't go through the AI again.
+7. **Failures.** 429, 5xx and network errors retry, and so does a 402 from the AI API (credit ran out); the row keeps its status. Other 4xx from BoxAPI aren't retried. Only a real not-found, private or no-image result goes to a person. `lastError` means failed for good: it is written only when BullMQ won't run the job again. The "failed" filter shows `queued` and `classified` rows with `lastError`, and those with no update for 6 hours, because a lost job never writes one. Publish, dismiss and rerun accept the same rows. Rerun applies only to failed rows: a `queued` row gets a new AI job, and a `classified` row runs only the publish step and keeps the AI answer.
+   **Data API quota:** nobody has seen a real quota error, and the code has no special case for one, so it follows the status code. A 429 or 5xx would retry. A 402 or 403 would stop at once and land on the "failed" filter for a manual rerun. A 400 or 404 on a profile lookup would be read as `profile_not_found` and go to a person, which is wrong for a quota error. Check this against one real response.
 8. **Queues.** `ai` runs one job at a time and at most 20 a minute, which are the AI key's limits. `post-publish` runs one job at a time, so two posts about a new shop can't both create it. Both use 8 attempts with an exponential backoff starting at 60,000 ms.
-9. **Shop status** follows the published reviews (§8). An auto-created page that turns out not to be a business is removed with the admin action **not a shop** (§9.2). It works only on auto-created shops with no hand-approved published review. It rejects the shop's pending and auto-published reviews (`rejectReason: not_a_shop`), dismisses the wishlist entry, and adds the handle to `ignoredHandles` so the next post can't create it again.
+9. **Shop status** follows the published reviews (§8). An auto-created page that turns out not to be a business is removed with the admin action **not a shop** (§9.2). It works only on auto-created shops with no hand-approved published review. It rejects the shop's pending and auto-published reviews (`rejectReason: not_a_shop`), dismisses the wishlist entry, and adds the handle to `ignoredHandles` so the next post can't create it again. Its posts go back to `needs_person` with the reason `not_a_shop`, so a person can attach them to the right shop; a post that also has another shop stays published, without the removed one.
 
 ## 7. Feature 3: Landing page (EN/FA)
 
@@ -312,14 +315,14 @@ A category in use by any shop can't be deleted; the admin must move those shops 
 | `status` | enum: `queued \| classified \| needs_person \| published \| dismissed` | `queued` waits for the AI, `classified` for the gate. |
 | `reasons` | string[] | Why the gate left the post for a person (§6.4). |
 | `analysis?` | object | The model's validated answer (§6.4 step 2). |
-| `lastError?` | string | The last failure of a job; a row still `queued` or `classified` with one has failed for good. |
+| `lastError?` | string | Why a job failed for good. It isn't written while retries remain (§6.4 step 7). |
 | `shopIds`, `reviewIds` | ObjectId[] | What the post produced. |
 
 ### `ignoredHandles`: accounts the trusted-post gate never publishes about
 
 | Field | Type | Description |
 |---|---|---|
-| `handle` | string, unique | Normalised handle. Added by **not a shop**; read together with `REVIEW_IGNORE_HANDLES`. |
+| `handle` | string, unique | Normalised handle. Added by **not a shop**; read together with `REVIEW_IGNORE_HANDLES` and every reviewer source's handle. |
 
 ### `wishlist`: pages people asked about that we haven't reviewed yet
 
@@ -425,7 +428,7 @@ Login works exactly like pagesanj's admin login: **username + password + a 6-dig
 4. **Categories:** add, rename and delete categories (deleting only when no shop uses one), with the number of shops in each.
 5. **Reviewer sources:** add or edit, toggle follow, set the backfill limit, "run backfill now." Adding shows the page's Instagram profile first (picture, name, bio, post count, followers, and whether it is OK: exists, public, has posts; one Data API request) and has a **trusted** switch, also on the edit screen.
 6. **Jobs:** recent `jobRuns`, the Data API request quota (`GET /api/my`: used, limit, left, plan end), "run daily check now."
-7. **Person check:** the `postChecks` the gate held (`needs_person`), plus a "failed" filter. Each shows the post, the model's suggestion and the reasons. Actions: edit outcome, direction and summary and **publish** (a missing shop is created first with the shop form, image upload included; a post with several reviewed shops gets one review per shop), **dismiss**, or **run the AI again**. Published reviews show when they were auto-published. The Shops screen has **not a shop** for auto-created shops (§6.4).
+7. **Person check:** the `postChecks` the gate held (`needs_person`), plus a "failed" filter. Each shows the post, the model's suggestion and the reasons. Actions: edit outcome, direction, summary and category and **publish** (a missing shop is created first with the shop form, image upload included; a post with several reviewed shops gets one review per shop; an open wishlist entry for the shop is promoted), **dismiss**, or, on failed rows only, **run again**. Published reviews show when they were auto-published. The Shops screen has **not a shop** for auto-created shops (§6.4).
 
 ## 10. Instagram setup (BoxAPI)
 
@@ -531,11 +534,15 @@ We have **no Meta app of our own**: no App Review, no Graph API token and no tok
 - Website legal copy commits to: DM requests and email deletion requests completed within 30 days; deletion via Instagram's *Apps and websites* runs as soon as the callback arrives; processing-queue messages removed within 7 days (§15 item 7). The site sets no cookies and loads no analytics.
 - **2026-10-30: trusted reviewer pages (§6.4).** Decided by the founder: trusted pages publish without an admin, unclear posts go to a person, a scam claim from a trusted page tags the shop `scammer`. The assistant's calls:
   - The starting model is `openai/gpt-6-luna` (cheapest of those tried, best confidence spread on 6 real posts), set in `AI_REVIEW_MODEL`; it needs `max_completion_tokens`, so the client picks the token field per model. Token cap 1,500. The AI host is `https://ai.boxapi.ir/ai/v1`; `GET /ai/v1/me` shows the key's own credit. Jev decision models refuse our key, so a chat model is used.
-  - The gate (§6.4) has extra hold reasons beyond the spec: `scam_contradiction` (a scam claim whose direction isn't negative), `source_not_trusted` (the source lost its trust before the gate ran), `review_pending` and `review_rejected` (a review of the post already exists and is the admin's to decide, or was taken down).
+  - The gate (§6.4) has extra hold reasons beyond the spec: `scam_contradiction` (a scam claim whose direction isn't negative, or `scam_reported` with no scam claim), `model_contradiction` (a positive direction with a bad outcome), `bad_summary` (empty or over 500 characters), `source_not_trusted` (the source lost its trust before the gate ran), `review_pending` and `review_rejected` (a review of the post already exists and is the admin's to decide, or was taken down). `not_a_shop` is set by the **not a shop** action, not by the gate.
+  - A handle must appear whole in the post, which overrides the plan's substring check: a truncated handle could brand an unrelated page a scammer.
+  - `lastError` is written only on the final attempt, and rows with no update for 6 hours count as failed, so a lost job can't hide a post.
+  - Every reviewer source's handle is ignored, so a reviewer page can't become a shop; a reviewer who also runs a shop goes to a person.
+  - **Not a shop** may remove a shop with several auto-published reviews, because they all rest on the same wrong identification. The spec's "no other published reviews" is read as hand-approved ones.
   - Shop status is derived from published reviews, with `statusManual` marking a hand-set status. A shop with no published review and no `scammer` tag resets to `no_known_issues`, so a takedown leaves no stale status; `createShop` sets `statusManual` for an explicit non-default status.
   - Categories can be created by the AI step (this changes "never free text" in §8).
   - A scam post with no purchase described is stored with the outcome `scam_reported`; rejecting it keeps the tag and `serious_warning` until an admin changes them.
-  - 429, 5xx, quota and network errors retry; only a real not-found, private or no-image result goes to a person. A 4xx from BoxAPI isn't retried.
+  - 429, 5xx, network errors and the AI API's 402 retry; only a real not-found, private or no-image result goes to a person. Other 4xx from BoxAPI aren't retried. How the Data API reports exhausted quota is unknown (§6.4 step 7).
   - Auto-created shops keep a phone read from the bio (§5.6). **Not a shop** removes an auto-created shop and ignores its handle. Auto-creating a shop absorbs an open wishlist entry; a dismissed handle goes to a person.
   - Posts from sources that aren't trusted keep the old flow. Existing pending reviews are left as they are; only posts ingested after this, or a forced backfill, use the new flow.
   - Every reply with reviews ends with the responsibility line (§5.4).

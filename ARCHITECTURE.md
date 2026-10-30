@@ -182,14 +182,17 @@ flowchart TD
   SH --> REV["published review<br/>autoPublished = true"]
   REV -->|scam claim| TAG["tag scammer"]
   REV & TAG --> ST["shop status derived<br/>from published reviews"]
-  NP --> ADM["Admin: person check<br/>publish, dismiss or run the AI again"]
+  NP --> ADM["Admin: person check<br/>publish or dismiss"]
   ADM --> REV
+  CL & PC -.->|"job gave up or was lost"| FAIL["failed filter<br/>rerun, publish or dismiss"]
+  FAIL -.-> ADM
 ```
 
-- **The gate is pure** (`services/postGate.ts`): it collects every failed rule so the admin sees all the reasons. `services/postPublish.ts` adds `source_not_trusted`, `review_pending` and `review_rejected`, and does the shop, review, tag and status steps. Each step can run again, so a crashed job retries from the top.
+- **The gate is pure** (`services/postGate.ts`): it collects every failed rule so the admin sees all the reasons. A handle must appear whole in the post (`vebo` doesn't match `vebo.ir`), and only the gate sets `scam_reported`. `services/postPublish.ts` adds `source_not_trusted`, `review_pending` and `review_rejected`, and does the shop, review, tag and status steps. Each step can run again, so a crashed job retries from the top.
 - **Shop status** (`services/shopStatus.ts`): all published reviews positive is `recommended`, all negative `warning`, a mix `mixed`, and the tag `scammer` always `serious_warning`. A shop with no published review and no `scammer` tag goes back to `no_known_issues`. A hand-set status (`statusManual`) is kept, except that `scammer` still wins.
-- **Auto-created shops** (`services/autoShops.ts`) reuse the profile fetch of section 4 and keep a phone read from the bio. They are marked `autoCreated`; the admin action **not a shop** removes one and adds its handle to `ignoredHandles`, which the gate reads together with `REVIEW_IGNORE_HANDLES`.
-- **Failures:** 429, 5xx, quota and network errors retry (8 attempts, exponential backoff from 60 s) and the row stays queued with `lastError`. Only a real not-found, private or no-image result goes to a person.
+- **Auto-created shops** (`services/autoShops.ts`) reuse the profile fetch of section 4 and keep a phone read from the bio. They are marked `autoCreated`; the admin action **not a shop** removes one, adds its handle to `ignoredHandles` and sends its posts back to `needs_person` with the reason `not_a_shop`. The gate reads `ignoredHandles` together with `REVIEW_IGNORE_HANDLES` and every reviewer source's handle.
+- **Failures:** 429, 5xx, network errors and the AI API's 402 retry (8 attempts, exponential backoff from 60 s); other 4xx don't. Only a real not-found, private or no-image result goes to a person. `lastError` means failed for good: the worker writes it only on the final attempt. The failed filter shows `queued` and `classified` rows with `lastError` or with no update for 6 hours (a lost job), and one shared filter drives that list and the publish, dismiss and rerun actions. Rerun applies only to failed rows; a `classified` rerun runs only the publish step.
+- **Data API quota:** a real quota error has never been seen, and there's no special case for one, so it follows the status code: 429 or 5xx retries, 402 or 403 goes to the failed filter, and a 400 or 404 on a profile lookup is read as `profile_not_found` and goes to a person (PRD §6.4 step 7).
 - Posts from sources that aren't trusted never reach the AI.
 
 Code: `services/postChecks.ts`, `services/postClassify.ts`, `services/postGate.ts`, `services/postPublish.ts`, `services/autoShops.ts`, `services/shopStatus.ts`, `boxapi/ai.ts`, `queues/workers/{ai,postPublish}.worker.ts`, `routes/admin/postChecks.ts`.
@@ -309,7 +312,7 @@ Backend config goes through `backend/src/config/env.ts`; the template is `backen
 | `BOXAPI_AI_BASE_URL` | AI API host. Defaults to `https://ai.boxapi.ir/ai/v1`. |
 | `AI_REVIEW_MODEL` | Model that classifies trusted posts (default `openai/gpt-6-luna`). Changing it needs no code change. |
 | `AI_PUBLISH_MIN_CONFIDENCE` | Lowest AI confidence that can auto-publish (default `0.8`). |
-| `REVIEW_IGNORE_HANDLES` | Tagged handles that aren't shops (sponsors). Also applies to handles the AI names; the `ignoredHandles` collection adds to it. |
+| `REVIEW_IGNORE_HANDLES` | Tagged handles that aren't shops (sponsors). Also applies to handles the AI names; the `ignoredHandles` collection and every reviewer source's handle add to it. |
 | `DAILY_CHECK_CRON` | Daily check time (default `0 9 * * *`, Asia/Tehran). |
 | `SESSION_SECRET`, `DATA_ENCRYPTION_KEY` | Admin sessions; encryption key shared with pagesanj. |
 
